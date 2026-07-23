@@ -38,13 +38,24 @@ no SCPE server, so there is nothing to trust and nothing to shut down.
 it standardizes how verifiable evidence (who produced it, that it's untampered, and any signed
 attestations) travels with a hashed artifact and is checked offline.
 
-**One core, many specifications.** *SCPE Core* is the envelope + identity + verification, shared
-by every domain. Each *SCPE Specification* adds only its domain's rules on top: **SCPE-C** (code),
-**SCPE-I** (image), **SCPE-V** (video), **SCPE-A** (audio), **SCPE-M** (model), **SCPE-DATA**
-(dataset), **SCPE-D** (document), **SCPE-AR** (artifact). Identity is a `(provider, subject)`
-pair resolved from a fixed host table (`github`, `gitlab`, `codeberg`) or an offline keys file —
-the manifest never carries a hostname, so a contribution can't steer the verifier at an
-attacker's host.
+**One core, many specifications.** *SCPE Core* — the envelope, identity, and verification — is
+shared by every domain. Each *SCPE Specification* adds only its domain's conventions on top; the
+`profile` label is surfaced but never changes the verify decision.
+
+| Specification | For | Seals | Example |
+|---|---|---|---|
+| **SCPE-C** | Code | a diff (`code-change`) | a pull request |
+| **SCPE-I** | Images | the file's bytes (`artifact`) | `.png`, `.jpg` |
+| **SCPE-V** | Video | the file's bytes | `.mp4`, `.mov` |
+| **SCPE-A** | Audio | the file's bytes | `.wav`, `.mp3` |
+| **SCPE-M** | Models | the file's bytes | `.safetensors`, `.gguf` |
+| **SCPE-DATA** | Datasets | the file's bytes | `.csv`, `.parquet` |
+| **SCPE-D** | Documents | the file's bytes | `.pdf` |
+| **SCPE-AR** | Any artifact | the file's bytes | any file |
+
+Identity is a `(provider, subject)` pair resolved from a fixed host table (`github`, `gitlab`,
+`codeberg`) or an offline keys file — the manifest never carries a hostname, so a contribution
+can't steer the verifier at an attacker's host.
 
 **Open, and meant to stay that way.** SCPE is — and will always be — open source: the
 specification and every reference implementation are free to read, implement, and fork. The
