@@ -1,5 +1,5 @@
 """SCPE CLI. contribute → signed envelope; verify → owner handshake (+ --apply
-with automatic contributor credit). Zero-setup for the receiver: uvx scpe verify."""
+with automatic contributor credit). Zero-setup for the receiver: uvx --from scpe-protocol scpe verify."""
 from __future__ import annotations
 
 import argparse

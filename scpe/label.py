@@ -68,14 +68,14 @@ def contribution_label(env: Envelope, *, filename: str = "envelope.zip", risk: s
         signed = "signed by    an SSH key on that GitHub account"
         claim = [
             "CLAIM - confirm it yourself:",
-            f"  uvx scpe verify {filename} --repo .",
+            f"  uvx --from scpe-protocol scpe verify {filename} --repo .",
             f"  checks the signature vs github.com/{m.github_login}.keys",
         ]
     else:  # legacy / unsigned identity
         who = f"{m.sender_name} <{m.sender_email}>"
         signed = "signed by    (no GitHub identity - legacy envelope)"
         claim = ["CLAIM - confirm it yourself:",
-                 f"  uvx scpe verify {filename} --repo ."]
+                 f"  uvx --from scpe-protocol scpe verify {filename} --repo ."]
 
     lines = [
         _top("CONTRIBUTION"),
@@ -146,7 +146,7 @@ def attestation_label(statement: dict, *, filename: str = "attestation.json") ->
         _row("format       in-toto/DSSE/ed25519 (verify w/ cosign)"),
         _row(),
         _row("VERIFY independently:"),
-        _row(f"  uvx scpe verify-attest {filename}"),
+        _row(f"  uvx --from scpe-protocol scpe verify-attest {filename}"),
         _row(),
         _bottom("cc/spec-01 - signed audit"),
     ]

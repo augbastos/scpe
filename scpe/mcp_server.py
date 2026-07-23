@@ -18,7 +18,7 @@ across the MCP transport.
 here: it is a human's git-authorship decision, not something an editor agent should
 trigger autonomously. Use `scpe verify --apply` for that step.
 
-The `mcp` SDK is an OPTIONAL extra (`pip install scpe[mcp]`). Importing this
+The `mcp` SDK is an OPTIONAL extra (`pip install scpe-protocol[mcp]`). Importing this
 module and calling any `cc_*` handler NEVER requires it — only `build_server()`/
 `main()` (i.e. actually running the server) does, so the core package and its test
 suite do not gain a hard dependency on `mcp`."""
@@ -304,7 +304,7 @@ def build_server():
     except ImportError as exc:
         raise ImportError(
             "the `mcp` SDK is required to run the scpe MCP server — install "
-            "the optional extra: pip install scpe[mcp]"
+            "the optional extra: pip install scpe-protocol[mcp]"
         ) from exc
 
     server = FastMCP(

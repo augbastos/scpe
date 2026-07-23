@@ -109,7 +109,7 @@ jobs:
         # and only if the CLI actually produced output (no-op when the backend declines,
         # so results.json is never clobbered with an empty file).
         run: |
-          pipx run scpe seal --from-results results.json --ai-recheck > results.airecheck.json
+          pipx run --spec scpe-protocol scpe seal --from-results results.json --ai-recheck > results.airecheck.json
           if [ -s results.airecheck.json ]; then
             mv results.airecheck.json results.json
           fi
@@ -139,6 +139,6 @@ jobs:
           if [ -n "$comment" ]; then
             gh pr comment "$pr" --repo "${{ github.repository }}" --body "$comment"
           else
-            pipx run scpe seal --from-results results.json --render-comment \
+            pipx run --spec scpe-protocol scpe seal --from-results results.json --render-comment \
               | gh pr comment "$pr" --repo "${{ github.repository }}" --body-file -
           fi

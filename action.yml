@@ -133,7 +133,7 @@ runs:
           # Unchanged path, byte-for-byte: today's informational seal. require=false
           # is opt-in gating, not a behavior change to the default seal — an
           # unattested PR still fails this step exactly as it always has.
-          pipx run scpe seal "${{ inputs.envelope }}" \
+          pipx run --spec scpe-protocol scpe seal "${{ inputs.envelope }}" \
             --repo "${{ inputs.repo }}" \
             ${{ inputs.run-tests == 'true' && '--run-tests' || '' }} \
             --json > results.json
@@ -148,7 +148,7 @@ runs:
         # job — this untrusted job has no write token and can only ever hand
         # over a DECISION, never post it.
         set +e
-        pipx run scpe seal "${{ inputs.envelope }}" \
+        pipx run --spec scpe-protocol scpe seal "${{ inputs.envelope }}" \
           --repo "${{ inputs.repo }}" \
           ${{ inputs.run-tests == 'true' && '--run-tests' || '' }} \
           --json > results.raw.json

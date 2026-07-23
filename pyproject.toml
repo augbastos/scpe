@@ -3,9 +3,9 @@ requires = ["setuptools>=68"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "scpe"
+name = "scpe-protocol"
 version = "0.1.2"
-description = "A trusted contribution protocol: improve or audit a repo you don't own and hand the owner a portable, signed change credited to a verifiable GitHub identity. The owner re-verifies with their own tooling before merge. AI optional."
+description = "SCPE: an open protocol for verifiable provenance of any digital artifact — who produced a contribution or file, and that it wasn't tampered with, verified offline with no server and no new accounts. Reference implementation + CLI (the console command is `scpe`)."
 readme = "README.md"
 requires-python = ">=3.11"
 license = { text = "Apache-2.0" }
@@ -14,7 +14,7 @@ keywords = ["github", "contributions", "open-source", "supply-chain", "provenanc
 classifiers = [
     "Development Status :: 3 - Alpha",
     "Intended Audience :: Developers",
-    "License :: OSI Approved :: MIT License",
+    "License :: OSI Approved :: Apache Software License",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
     "Topic :: Software Development :: Version Control :: Git",
@@ -27,7 +27,7 @@ dependencies = ["cryptography>=42"]
 [project.urls]
 Homepage = "https://github.com/augbastos/scpe"
 Repository = "https://github.com/augbastos/scpe"
-Documentation = "https://github.com/augbastos/scpe/blob/main/docs/format.md"
+Documentation = "https://github.com/augbastos/scpe/blob/main/spec/SPEC.md"
 
 [project.optional-dependencies]
 dev = ["pytest>=8", "pyyaml>=6"]
