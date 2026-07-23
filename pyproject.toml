@@ -1,0 +1,42 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "scpe"
+version = "0.1.2"
+description = "A trusted contribution protocol: improve or audit a repo you don't own and hand the owner a portable, signed change credited to a verifiable GitHub identity. The owner re-verifies with their own tooling before merge. AI optional."
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "Apache-2.0" }
+authors = [{ name = "Augusto Bastos" }]
+keywords = ["github", "contributions", "open-source", "supply-chain", "provenance", "attestation", "in-toto", "dsse", "code-signing", "ssh", "verification"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Software Development :: Version Control :: Git",
+    "Topic :: Security",
+    "Topic :: Security :: Cryptography",
+    "Environment :: Console",
+]
+dependencies = ["cryptography>=42"]
+
+[project.urls]
+Homepage = "https://github.com/augbastos/scpe"
+Repository = "https://github.com/augbastos/scpe"
+Documentation = "https://github.com/augbastos/scpe/blob/main/docs/format.md"
+
+[project.optional-dependencies]
+dev = ["pytest>=8", "pyyaml>=6"]
+mcp = ["mcp>=1.2"]
+
+[project.scripts]
+scpe = "scpe.cli:main"
+scpe-mcp = "scpe.mcp_server:main"
+scpe-envelope = "reference.producer:main"
+
+[tool.setuptools.packages.find]
+include = ["scpe*", "reference*"]

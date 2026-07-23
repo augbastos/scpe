@@ -1,0 +1,4 @@
+{
+  "status": "identity-unverifiable",
+  "note": "REAL verifier output, confirmed by running reference/standalone/verify_envelope.py, impl/go/cmd/scpe-verify, and impl/rust's scpe-verify binary (all three agree). identity.subject is \"evil/traversal\" -- contains '/' but no '..' substring, so this exercises the safe-subject charset rule ([A-Za-z0-9][A-Za-z0-9._-]{0,63}) on its own, distinct from the existing identity-unverifiable-subject normative vector which relies on the separate '..' substring check. No surprise: rejected as designed, before any key fetch or signature check."
+}

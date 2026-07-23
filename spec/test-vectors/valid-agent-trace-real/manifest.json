@@ -1,0 +1,68 @@
+{
+  "spec_version": "scpe/0.1",
+  "created_at": "2026-07-21T18:00:00Z",
+  "contributor": {
+    "identity": {
+      "provider": "github",
+      "subject": "octocat-test"
+    },
+    "key_fingerprint": "SHA256:NqQUNys8RvTrWvarwI1THfXgW0VxWCufOuUaivGckmU"
+  },
+  "subject": {
+    "type": "code-change",
+    "target": {
+      "repo": "octocat-test/calc",
+      "base_sha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    },
+    "change": {
+      "diff_sha256": "2becef805bd44dae672169edf4bbfdfc4535c3864523b3ee0b93dfce8a7db603",
+      "head_sha": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "files_changed": [
+        "calc.py"
+      ],
+      "stats": {
+        "insertions": 1,
+        "deletions": 1
+      }
+    }
+  },
+  "ai_disclosure": {
+    "mode": "assisted",
+    "notes": "test vector"
+  },
+  "attestations": [
+    {
+      "type": "agent-trace",
+      "format": "agent-trace/1",
+      "data": {
+        "version": "1.0.0",
+        "id": "0b8e7a30-1111-4222-8333-444455556666",
+        "timestamp": "2026-07-21T17:59:00Z",
+        "tool": {
+          "name": "test-agent",
+          "version": "0.0.1"
+        },
+        "files": [
+          {
+            "path": "calc.py",
+            "conversations": [
+              {
+                "url": "https://example.invalid/session/1",
+                "contributor": {
+                  "type": "ai",
+                  "model_id": "anthropic/claude-test"
+                },
+                "ranges": [
+                  {
+                    "start_line": 2,
+                    "end_line": 2
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      }
+    }
+  ]
+}

@@ -1,0 +1,5 @@
+{
+  "status": "verified",
+  "attestations": [],
+  "note": "REAL verifier output (all three agree: verified). diff.patch contains an invalid UTF-8 byte (0xFF). Regression guard for byte-level diff normalization (SPEC \u00a76): before the fix, Python decoded with errors=replace (0xFF -> U+FFFD) while Go/Rust preserved the byte, so the anchor -- and the verdict -- split across implementations. Now all four normalize at the byte level, so the anchor is well-defined and identical. If any implementation reverts to a decode-based normalization, this vector's verdict diverges and flags it."
+}

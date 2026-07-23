@@ -1,0 +1,4 @@
+{
+  "status": "signature-invalid",
+  "note": "REAL verifier output, confirmed by running reference/standalone/verify_envelope.py, impl/go/cmd/scpe-verify, and impl/rust's scpe-verify binary (all three agree). manifest.json is untouched and validly formed; manifest.sig is a genuine SSHSIG blob truncated to 201 of its original 302 bytes (simulating a truncated transfer or disk fault, as opposed to invalid-signature which mutates the MANIFEST after signing). No surprise: the corrupted/incomplete signature blob fails ssh-keygen -Y verify (or the Go/Rust SSHSIG parse equivalent) cleanly, with no crash and no silent pass."
+}

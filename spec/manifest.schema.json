@@ -1,0 +1,167 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "SCPE scpe/0.1 manifest.json",
+  "description": "Structural shape of an SCPE scpe/0.1 manifest.json (SPEC.md §4). Derived from SPEC.md and the eighteen manifests under spec/test-vectors/*/manifest.json.",
+  "$comment": "DESCRIPTIVE / ADVISORY ONLY. The normative check for what makes a manifest valid is SPEC.md §8 (the verification algorithm) plus the reference/impl verifiers, not this file. This schema deliberately does NOT enforce several things SPEC.md treats as verification-time (not parse-time) failures, so that manifests which are structurally well-formed but semantically rejected by a verifier still validate here — several test vectors are exactly that on purpose: unsupported-provider (contributor.identity.provider = 'oidc', a reserved-but-not-implemented provider, §11.1), unsupported-subject (subject.type = 'container-image', an unknown subject kind that fails closed per §6.3), identity-unverifiable-subject (contributor.identity.subject = 'evil..traversal', violates the §8 safe-subject rule), and unknown-version (spec_version = 'scpe/9.9', an unsupported MAJOR per §11). This schema intentionally leaves provider, subject.type, subject.identity.subject's charset, and spec_version's MAJOR unconstrained (beyond basic string/pattern shape) for that reason. It also does not restrict additional properties anywhere, per §11's forward-compatibility rule that verifiers MUST accept an unknown MINOR's new optional fields. Validate a manifest against this schema to catch structural typos early; then run an actual SPEC §8 verifier for the real answer.",
+  "type": "object",
+  "required": ["spec_version", "created_at", "contributor", "subject", "ai_disclosure"],
+  "properties": {
+    "spec_version": {
+      "type": "string",
+      "pattern": "^scpe/[0-9]+\\.[0-9]+$",
+      "description": "scpe/<MAJOR>.<MINOR> (§11). This schema only checks the string shape. An unknown MAJOR (e.g. 'scpe/9.9' — see spec/test-vectors/unknown-version) is still structurally valid JSON and validates here; §8 step 2 is what rejects it as unsupported-version at verification time."
+    },
+    "created_at": {
+      "type": "string",
+      "format": "date-time",
+      "description": "RFC 3339 timestamp (§4)."
+    },
+    "contributor": {
+      "type": "object",
+      "required": ["identity", "key_fingerprint"],
+      "properties": {
+        "identity": {
+          "type": "object",
+          "required": ["provider", "subject"],
+          "properties": {
+            "provider": {
+              "type": "string",
+              "minLength": 1,
+              "description": "Key-resolution method (§8, §11.1), read by the verifier at §8 step 3. scpe/0.1 implements exactly four: github, gitlab, codeberg, local. Not restricted to an enum here: the registry is a closed set enforced by the VERIFIER (fail-safe: unsupported-provider), not a schema-level constraint — a manifest naming a reserved-but-unimplemented or future provider (e.g. 'oidc', see spec/test-vectors/unsupported-provider) is still a structurally valid manifest and validates here."
+            },
+            "subject": {
+              "type": "string",
+              "minLength": 1,
+              "description": "Username within `provider` — the forge identity the signature is checked against (§8 steps 3-6). The §8 safe-subject rule (^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$, and no '..' substring) is a verification-time check (failure -> identity-unverifiable), not enforced here, so a subject that violates it (e.g. 'evil..traversal', see spec/test-vectors/identity-unverifiable-subject) still validates structurally."
+            }
+          }
+        },
+        "key_fingerprint": {
+          "type": "string",
+          "pattern": "^SHA256:.+$",
+          "description": "SHA256 fingerprint of the signing key, e.g. 'SHA256:<base64>' (§4)."
+        }
+      }
+    },
+    "subject": {
+      "type": "object",
+      "required": ["type"],
+      "properties": {
+        "type": {
+          "type": "string",
+          "description": "Discriminator read by the verifier's integrity step (§8 step 7, §6.3). scpe/0.1 implements 'code-change' (§6.1) and 'artifact' (§6.2, standalone-only); any other value is a subject kind the reference verifier does not implement and fails closed to unsupported-subject rather than being a schema error — see spec/test-vectors/unsupported-subject (type 'container-image')."
+        }
+      },
+      "allOf": [
+        {
+          "if": { "properties": { "type": { "const": "code-change" } } },
+          "then": {
+            "required": ["target", "change"],
+            "properties": {
+              "target": {
+                "type": "object",
+                "required": ["repo", "base_sha"],
+                "properties": {
+                  "repo": { "type": "string", "description": "owner/name or URL of the repository the diff applies to (§6.1)." },
+                  "base_sha": { "type": "string", "description": "Full commit SHA the diff applies to (§6.1)." }
+                }
+              },
+              "change": {
+                "type": "object",
+                "required": ["diff_sha256", "head_sha"],
+                "properties": {
+                  "diff_sha256": {
+                    "type": "string",
+                    "pattern": "^[0-9a-fA-F]{64}$",
+                    "description": "The code-change integrity anchor (§6.1): SHA-256 hex over the normalized diff.patch bytes. This is the exact field the verifier's integrity step (§8 step 7) recomputes and compares; a mismatch is 'tampered' (see spec/test-vectors/tampered-diff)."
+                  },
+                  "head_sha": {
+                    "type": "string",
+                    "description": "The exact commit the contributor produced. Informational (§6.1) — recorded for audit, not part of the integrity check, and breaks under rebase by design."
+                  },
+                  "files_changed": {
+                    "type": "array",
+                    "items": { "type": "string" },
+                    "description": "SHOULD (§6.1) — human-oriented summary, not verified."
+                  },
+                  "stats": {
+                    "type": "object",
+                    "description": "SHOULD (§6.1) — human-oriented summary, not verified.",
+                    "properties": {
+                      "insertions": { "type": "integer", "minimum": 0 },
+                      "deletions": { "type": "integer", "minimum": 0 }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": { "properties": { "type": { "const": "artifact" } } },
+          "then": {
+            "required": ["digest"],
+            "properties": {
+              "digest": {
+                "type": "object",
+                "required": ["sha256"],
+                "properties": {
+                  "sha256": {
+                    "type": "string",
+                    "pattern": "^[0-9a-fA-F]{64}$",
+                    "description": "The artifact integrity anchor (§6.2): SHA-256 hex over the raw artifact bytes (no normalization). The field the verifier's integrity step (§8 step 7) compares against the hashed enclosed artifact.bin; a mismatch is 'tampered' (see spec/test-vectors/tampered-artifact)."
+                  }
+                }
+              },
+              "media_type": {
+                "type": "string",
+                "description": "SHOULD (§6.2) — the artifact's MIME type; informational, not verified."
+              }
+            }
+          }
+        }
+      ]
+    },
+    "ai_disclosure": {
+      "type": "object",
+      "required": ["mode"],
+      "properties": {
+        "mode": {
+          "type": "string",
+          "enum": ["none", "assisted", "generated"],
+          "description": "§4."
+        },
+        "notes": { "type": "string" }
+      }
+    },
+    "profile": {
+      "type": "string",
+      "description": "Optional domain-convention label (§4, §13). Registry (§13.1): SCPE-C, SCPE-I, SCPE-V, SCPE-A, SCPE-M, SCPE-DATA, SCPE-D, SCPE-AR. Purely advisory: the verifier surfaces it verbatim and NEVER dispatches on it for the verdict (§13.2), and an unregistered value is surfaced-but-ignored, never an error — so this schema does not restrict the string to the registry list."
+    },
+    "attestations": {
+      "type": "array",
+      "description": "Optional list of typed, signed claims (§5). Omitted or [] means none.",
+      "items": {
+        "type": "object",
+        "required": ["type"],
+        "properties": {
+          "type": {
+            "type": "string",
+            "description": "Attestation discriminator (§5.1) read by the verifier's per-entry summary (§5.3, §8 step 8). Registered in scpe/0.1: 'agent-trace' (implemented), 'timestamp' and 'countersignature' (reserved, format-only, reported present-unverified). Any other value is likewise an unknown type -> present-unverified, never an error, never a silent pass -- still a structurally valid entry."
+          },
+          "format": {
+            "type": "string",
+            "description": "Selects the payload shape within `type` (§5.2, used by 'agent-trace': 'agent-trace/1', 'git-ai/notes', 'generic/1'). Every registered type in scpe/0.1 carries `format`, but it is optional in this schema so a future `type` without one still validates -- see the unknown-type fail-safe, §5.3."
+          },
+          "data": {
+            "description": "Type/format-specific payload (§5.2 for agent-trace; opaque for reserved types)."
+          }
+        }
+      }
+    },
+    "extensions": {
+      "type": "object",
+      "description": "Optional free-form map (§4). Verifiers MUST ignore unknown keys."
+    }
+  }
+}

@@ -1,0 +1,4 @@
+{
+  "status": "signature-invalid",
+  "note": "REAL verifier output, confirmed by running reference/standalone/verify_envelope.py, impl/go/cmd/scpe-verify, and impl/rust's scpe-verify binary (all three agree). Manifest bytes are otherwise identical to valid-minimal, but the SSHSIG blob in manifest.sig was produced with `ssh-keygen -Y sign -n not-scpe` instead of the required `-n scpe/0.1` namespace. All three verifiers hardcode the expected namespace on the verify call and correctly refuse a cryptographically genuine signature scoped to a different SSHSIG namespace. No surprise: this is the namespace-binding defense (SPEC S7) working as intended -- confirms a signature cannot be replayed across namespaces/protocols."
+}

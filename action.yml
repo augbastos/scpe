@@ -1,0 +1,184 @@
+name: scpe seal
+description: >-
+  Verify a signed scpe envelope on a PR and post a decision-first seal:
+  identity, risk band, tests, provenance.
+author: Augusto Bastos
+branding:
+  icon: shield
+  color: green
+
+inputs:
+  envelope:
+    description: Path to the scpe envelope committed on the PR.
+    required: false
+    default: .scpe/contribution.cc.zip
+  repo:
+    description: Path to the checked-out repository to verify against.
+    required: false
+    default: .
+  run-tests:
+    description: Run the repo's test suite inside the untrusted job.
+    required: false
+    default: "true"
+  require:
+    description: >-
+      Gate mode. "false" (default) keeps today's informational seal: a report,
+      never a verdict that blocks merge. "true" makes this repository require a
+      signed scpe contribution — an unattested PR or any status other than
+      "verified" (spec scpe/0.1 §8) is a FAILING check, not just a comment.
+      The require DECISION is computed here, in this untrusted step (no
+      secrets, read-only token) and handed to the trusted job via results.json;
+      the trusted job only ever reads it, never recomputes it.
+    required: false
+    default: "false"
+  level:
+    description: >-
+      SCPE assurance level — see docs/LEVELS.md for the full trade-off table.
+      Levels are cumulative: each one implies everything the level below it
+      checks. Only "1" and "2" are implemented; any other value (including "3")
+      fails this step immediately with a clear error instead of silently
+      falling back to level 2.
+        "1" — AI-disclosure lint only, zero-friction. No envelope, no signing
+        key, no `pipx install scpe` even — it runs ONLY
+        reference/disclosure.py (via reference/level1_lint.py, read straight
+        out of this action's own checkout, github.action_path) against the PR
+        body and commit messages, looking for an `Assisted-by:` trailer or a
+        checked PR-template checkbox.
+        "2" (default) — a valid signed SCPE envelope is required: the full
+        envelope/signature seal below, unchanged from before levels existed.
+        This IMPLIES level 1: an envelope's `provenance` field (the
+        AI-disclosure, signed as part of the manifest — required by
+        scpe/envelope.py, no default) can never be absent from a `verified`
+        envelope, so a level-2 pass has already re-proven what level 1's
+        free-text lint checks, via a stronger, signed mechanism instead of an
+        unsigned trailer.
+        "3" — third-party countersignature (a maintainer/reviewer co-signs the
+        envelope, independent of the author). ROADMAP — not implemented in
+        this Action or in spec scpe/0.1.
+      Combines with `require` exactly like the full seal: require=false
+      reports; require=true fails the check and posts
+      "⚠️ Missing AI-use disclosure ..." when the level-1 signal is absent.
+    required: false
+    default: "2"
+
+outputs:
+  results:
+    description: Path to the machine-readable results.json emitted by `scpe seal --json`.
+    value: ${{ steps.seal.outputs.results }}
+  status:
+    description: >-
+      "unattested" (no valid envelope), "not-verified" (envelope present but
+      identity/signature check failed), or "verified". "n/a" when require=false,
+      matching today's informational-only behavior. At level=1 this instead
+      reflects disclosure presence ("verified"/"unattested") regardless of require,
+      since level 1 has no envelope to be "n/a" about.
+    value: ${{ steps.seal.outputs.status }}
+  gate-pass:
+    description: >-
+      "true" unless require=true and status != "verified". This is the require
+      DECISION for the trusted job to act on.
+    value: ${{ steps.seal.outputs.gate-pass }}
+
+runs:
+  using: composite
+  steps:
+    - id: seal
+      shell: bash
+      # Attacker-controlled PR fields (body, base/head SHAs) reach the script ONLY
+      # through env, never inlined into the run: text — a hostile PR body cannot
+      # break out of a string literal and inject shell (mirrors the safe pattern in
+      # docs/workflows/scpe.yml's "Extract the signed envelope" step). REPO_DIR and
+      # REQUIRE come from trusted action inputs and ride the same env for consistency.
+      env:
+        PR_BODY: ${{ github.event.pull_request.body }}
+        BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        REPO_DIR: ${{ inputs.repo }}
+        REQUIRE: ${{ inputs.require }}
+      # UNTRUSTED wrapper: deterministic risk + tests, no LLM, no secrets.
+      # Emits results.json for the trusted job to render + post.
+      run: |
+        if [ "${{ inputs.level }}" = "1" ]; then
+          # LEVEL 1 — zero-friction AI-disclosure lint. No envelope, no signing
+          # key, and no pip/pipx install of the scpe package at all: this reads
+          # reference/level1_lint.py straight out of the action's OWN checkout
+          # (github.action_path is this repo at the tag the caller pinned),
+          # which in turn only checks the PR body + commit messages already
+          # sitting in the checkout — no secrets, no network. Always exits 0 so
+          # the artifact reaches the trusted job even when require=true and the
+          # signal is absent (spec §8: "unattested" is a state, not an error).
+          # PR_BODY / BASE_SHA / HEAD_SHA / REPO_DIR / REQUIRE are exported by the
+          # step-level env: block above — never inlined into this script — so an
+          # attacker-controlled PR body cannot inject shell here.
+          python3 "${{ github.action_path }}/reference/level1_lint.py"
+          echo "results=results.json" >> "$GITHUB_OUTPUT"
+          echo "status=$(python3 -c "import json; print(json.load(open('results.json'))['status'])")" >> "$GITHUB_OUTPUT"
+          echo "gate-pass=$(python3 -c "import json; print(str(json.load(open('results.json'))['gate_pass']).lower())")" >> "$GITHUB_OUTPUT"
+          exit 0
+        fi
+
+        if [ "${{ inputs.level }}" != "2" ]; then
+          # Anything other than "1" (handled above) or "2" is REJECTED, not
+          # silently treated as level 2 — a caller who sets level: 3 expecting
+          # third-party countersignature must get a clear failure, never a
+          # false sense of assurance this Action does not provide. Level 3 is
+          # roadmap only (docs/LEVELS.md); it is not implemented anywhere in
+          # this repo. No secrets, no envelope read — this check runs before
+          # either.
+          echo "::error::level=${{ inputs.level }} is not supported. This Action implements level 1 (AI-disclosure lint) and level 2 (signed SCPE envelope, default). Level 3 (third-party countersignature) is on the roadmap, not implemented — see docs/LEVELS.md. Set level: 1 or level: 2." >&2
+          exit 1
+        fi
+
+        if [ "${{ inputs.require }}" != "true" ]; then
+          # Unchanged path, byte-for-byte: today's informational seal. require=false
+          # is opt-in gating, not a behavior change to the default seal — an
+          # unattested PR still fails this step exactly as it always has.
+          pipx run scpe seal "${{ inputs.envelope }}" \
+            --repo "${{ inputs.repo }}" \
+            ${{ inputs.run-tests == 'true' && '--run-tests' || '' }} \
+            --json > results.json
+          echo "results=results.json" >> "$GITHUB_OUTPUT"
+          echo "status=n/a" >> "$GITHUB_OUTPUT"
+          echo "gate-pass=true" >> "$GITHUB_OUTPUT"
+          exit 0
+        fi
+
+        # require=true: this step MUST still succeed even when the PR is
+        # unattested or fails verification, so the artifact reaches the trusted
+        # job — this untrusted job has no write token and can only ever hand
+        # over a DECISION, never post it.
+        set +e
+        pipx run scpe seal "${{ inputs.envelope }}" \
+          --repo "${{ inputs.repo }}" \
+          ${{ inputs.run-tests == 'true' && '--run-tests' || '' }} \
+          --json > results.raw.json
+        code=$?
+        set -e
+        python3 - "$code" <<'PY'
+        import json
+        import sys
+        from pathlib import Path
+
+        code = sys.argv[1]
+        raw = Path("results.raw.json")
+        if code == "0" and raw.exists() and raw.stat().st_size > 0:
+            data = json.loads(raw.read_text(encoding="utf-8"))
+            status = "verified" if data.get("verified") else "not-verified"
+        else:
+            # spec §8: no attestation found is the `unattested` STATE, not an
+            # error — a plain PR without scpe is simply unattested.
+            data = {"verified": False, "band": "", "flags": [], "matched": [],
+                    "added": 0, "removed": 0, "files": [],
+                    "tests": {"ran": False, "ok": False, "summary": "not run"},
+                    "provenance": "", "hook": ""}
+            status = "unattested"
+        data["status"] = status
+        data["require"] = True
+        data["gate_pass"] = status == "verified"
+        Path("results.json").write_text(json.dumps(data), encoding="utf-8")
+        PY
+        status=$(python3 -c "import json; print(json.load(open('results.json'))['status'])")
+        gate_pass=$(python3 -c "import json; print(str(json.load(open('results.json'))['gate_pass']).lower())")
+        echo "results=results.json" >> "$GITHUB_OUTPUT"
+        echo "status=$status" >> "$GITHUB_OUTPUT"
+        echo "gate-pass=$gate_pass" >> "$GITHUB_OUTPUT"

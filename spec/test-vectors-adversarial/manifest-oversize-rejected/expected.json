@@ -1,0 +1,5 @@
+{
+  "status": "unattested",
+  "attestations": [],
+  "note": "REAL verifier output, confirmed by running reference/standalone/verify_envelope.py, impl/go/cmd/scpe-verify, and impl/rust's scpe-verify binary (all three agree: unattested). manifest.json is 1200834 bytes -- over the 1 MiB MAX_MANIFEST_BYTES cap -- and otherwise identical to valid-minimal. REGRESSION GUARD: the 1 MiB manifest cap is now enforced on the directory-input path too (verify_envelope.py _read_file_capped, verify.go readFileCapped, scpe.rs read_file_capped), not only on the zip path, so an oversized manifest is rejected (load fails -> unattested) before it is parsed. This vector previously documented a gap (the directory path returned 'verified'); the cap fix closed it. If any implementation regresses to accepting an oversized directory manifest, this vector's status flips back to 'verified' and flags it."
+}

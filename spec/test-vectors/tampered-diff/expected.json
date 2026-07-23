@@ -1,0 +1,4 @@
+{
+  "status": "tampered",
+  "note": "diff.patch does not match change.diff_sha256"
+}

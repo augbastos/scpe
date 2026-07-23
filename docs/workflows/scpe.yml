@@ -1,0 +1,144 @@
+name: scpe
+
+# Drop this file in a repo as .github/workflows/scpe.yml to re-verify every
+# scpe contribution PR and post a decision-first seal (identity, risk, tests,
+# provenance). Nothing lands until you merge.
+#
+# Two triggers, two trust levels — the standard fork-safe pattern:
+#   pull_request  -> UNTRUSTED "verify" job: runs the contributor's tests, has NO
+#                    secrets and a read-only token, and never persists credentials to
+#                    disk. Safe to execute code from a stranger's fork.
+#   workflow_run  -> TRUSTED "seal" job: runs afterwards in the BASE repo with a
+#                    write-scoped token. It only renders + posts the seal comment; it
+#                    never checks out or runs contributor code.
+#
+# GATE MODE (policy, opt-in): set `require: "true"` on the `augbastos/scpe@v0.1.2`
+# step below to make this repository REQUIRE a signed scpe contribution. An
+# unattested PR, or any status other than "verified" (spec scpe/0.1 §8), then
+# FAILS this workflow's "seal" job and posts "❌ Not verifiable" instead of the
+# usual report. The require DECISION is still computed entirely inside the
+# untrusted "verify" job (no secrets, read-only token) — the trusted "seal" job
+# only ever reads that decision from the artifact, never recomputes it. Default
+# is "false": today's informational-only seal, unchanged.
+on:
+  pull_request:
+  workflow_run:
+    workflows: ["scpe"]
+    types: [completed]
+
+permissions:
+  contents: read
+
+jobs:
+  verify:                       # UNTRUSTED — no secrets; safe to run contributor code
+    if: ${{ github.event_name == 'pull_request' }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false   # never write the token into .git/config
+
+      # The signed envelope rides in the PR body (base64) so merging stays clean —
+      # no binary blob in history. The body is passed via env (never inlined into the
+      # script) so a hostile body cannot inject shell.
+      - name: Extract the signed envelope from the PR body
+        env:
+          PR_BODY: ${{ github.event.pull_request.body }}
+        run: |
+          mkdir -p .scpe
+          printf '%s' "$PR_BODY" \
+            | sed -n '/scpe-envelope:v1/,/-->/p' \
+            | sed '1d;$d' \
+            | base64 -d > .scpe/contribution.cc.zip
+
+      # Install your repo's own test dependencies here so --run-tests can run them,
+      # e.g.  pip install -e ".[test]"  /  npm ci  /  cargo fetch. The seal still
+      # reports identity + risk even if this repo has no runner.
+      - run: pip install pytest
+
+      - id: seal                       # deterministic risk + tests, no LLM, no secrets
+        uses: augbastos/scpe@v0.1.2
+        with:
+          require: "false"             # flip to "true" to require a signed contribution
+          # level: "1"                 # zero-friction mode: AI-disclosure lint only,
+                                        # no envelope/signing key needed (default "2" =
+                                        # today's full seal, unchanged)
+
+      # Hand the verdict + PR number to the trusted job. The number MUST travel in the
+      # artifact: github.event.workflow_run.pull_requests is empty for fork PRs.
+      - run: echo "${{ github.event.pull_request.number }}" > pr-number.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: scpe-results
+          path: |
+            results.json
+            pr-number.txt
+
+  seal:                         # TRUSTED — write token; never runs untrusted code
+    if: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success' }}
+    runs-on: ubuntu-latest
+    permissions:
+      pull-requests: write
+      # A job-level permissions block REPLACES the workflow default (it does not merge),
+      # so every unlisted scope is set to none. actions/download-artifact@v4 with run-id
+      # needs actions:read to reach a sibling run's artifact — without it the download
+      # fails and the gate never runs.
+      actions: read
+    steps:
+      - name: Download the verify job's results
+        uses: actions/download-artifact@v4
+        with:
+          name: scpe-results
+          run-id: ${{ github.event.workflow_run.id }}
+          github-token: ${{ github.token }}
+
+      # Optional: re-run the check with the OWNER's own AI model, only if a key is set.
+      # This stays in the trusted job because it uses a secret — it renders from the
+      # already-computed results.json and never executes contributor code.
+      - name: Optional AI re-check with the owner's model
+        if: ${{ secrets.SCPE_API_KEY != '' }}
+        env:
+          SCPE_BACKEND: openai
+          SCPE_MODEL: ${{ vars.SCPE_MODEL }}
+          SCPE_BASE_URL: ${{ vars.SCPE_BASE_URL }}
+          SCPE_API_KEY: ${{ secrets.SCPE_API_KEY }}
+        # The CLI prints the FULL merged results dict (original fields + ai_recheck) on
+        # stdout. Appending it onto results.json would concatenate two JSON objects into
+        # one file and make the next step's json.load() throw, failing the whole seal job
+        # under `bash -e`. Capture to a separate file and replace results.json wholesale —
+        # and only if the CLI actually produced output (no-op when the backend declines,
+        # so results.json is never clobbered with an empty file).
+        run: |
+          pipx run scpe seal --from-results results.json --ai-recheck > results.airecheck.json
+          if [ -s results.airecheck.json ]; then
+            mv results.airecheck.json results.json
+          fi
+
+      - name: Post the seal comment (or the gate failure)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          pr="$(cat pr-number.txt)"
+          # The require DECISION was computed upstream, in the untrusted "verify"
+          # job (results.json's gate_pass) — this step only ever READS it, never
+          # recomputes it from raw contributor input. Missing key (require=false,
+          # today's informational path) defaults to "pass": nothing changes.
+          gate_pass="$(python3 -c "import json; print(str(json.load(open('results.json')).get('gate_pass', True)).lower())")"
+          if [ "$gate_pass" = "false" ]; then
+            # results.json MAY carry its own fail_message (e.g. level=1's disclosure
+            # lint) — if so, use it verbatim; otherwise fall back to the default full-
+            # seal message, unchanged. Either way this is a READ, never a recompute.
+            msg="$(python3 -c "import json; d = json.load(open('results.json')); print(d.get('fail_message') or '❌ Not verifiable — this repository requires a signed SCPE contribution (spec scpe/0.1).')")"
+            gh pr comment "$pr" --repo "${{ github.repository }}" --body "$msg"
+            exit 1
+          fi
+          # Likewise, results.json MAY already carry a ready-to-post comment (level=1's
+          # informational report) — skip the pipx render entirely in that case, since
+          # level 1 has no envelope for `scpe seal --render-comment` to describe.
+          comment="$(python3 -c "import json; d = json.load(open('results.json')); print(d.get('comment') or '')")"
+          if [ -n "$comment" ]; then
+            gh pr comment "$pr" --repo "${{ github.repository }}" --body "$comment"
+          else
+            pipx run scpe seal --from-results results.json --render-comment \
+              | gh pr comment "$pr" --repo "${{ github.repository }}" --body-file -
+          fi

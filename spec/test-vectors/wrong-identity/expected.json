@@ -1,0 +1,4 @@
+{
+  "status": "signature-invalid",
+  "note": "signed by a key not present in the login's keys file"
+}
