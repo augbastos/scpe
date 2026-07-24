@@ -1,6 +1,6 @@
-name: scpe seal
+name: SCPE Seal
 description: >-
-  Verify a signed scpe envelope on a PR and post a decision-first seal:
+  Verify a signed SCPE envelope on a PR and post a decision-first seal:
   identity, risk band, tests, provenance.
 author: Augusto Bastos
 branding:
