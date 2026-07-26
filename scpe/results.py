@@ -76,10 +76,20 @@ def _provenance(ai_disclosure: object) -> str:
     return base
 
 
-def _fail_message(status: str, detail: str, *, disclosure_present: bool) -> str:
+def _fail_message(status: str, detail: str, *, disclosure_present: bool,
+                  key_source: str | None = None) -> str:
     """The one line the trusted job posts when the gate closes. Specific by construction:
     the trusted job must never have to recompute a reason, and "not verifiable" without a
     cause is an unactionable check."""
+    if status == VERIFIED and key_source == "bundled":
+        # Rejected while the status says `verified`, which is the one case a maintainer will
+        # not guess: the signature is genuine, it just proves nothing about the account named
+        # in the manifest, because the keys that checked it travelled with the submission.
+        return ("❌ Self-anchored identity — the signature is valid, but it was checked "
+                "against a keys file included in the submission, not against the keys the "
+                "declared provider publishes for that account. A `bundled` anchor proves "
+                "the signing act alone (spec scpe/0.1 §8 step 4); this repository requires "
+                "a forge-backed identity.")
     if status == VERIFIED and not disclosure_present:
         # Level 2 is documented as implying level 1. The reference verifier does not read
         # `ai_disclosure` (SPEC's schema is advisory), so the obligation is re-imposed here
@@ -123,16 +133,27 @@ def build_results(result: _ref.Result, *, path: Path, diff: str = "",
     band = seal.risk_band(diff)
     added, removed = diffinfo.count_diff_lines(diff)
     verified = result.status == VERIFIED
+    # A `verified` anchored on `bundled` keys was checked against a key set the SUBMITTER
+    # enclosed, so it says nothing about the forge account named in the manifest (SPEC §8
+    # step 4, THREAT_MODEL §2.1). The seal already labels it as self-anchored; a merge gate
+    # has to go further and refuse it, or "require: true" would accept a contribution that
+    # authenticated itself. `flag` passes: those keys came from the repository owner.
+    #
+    # Under the §9 PR-body transport this is unreachable today — that path never carries a
+    # keys member, so the anchor is always forge or flag. It is enforced anyway, because the
+    # gate must be safe by construction and not by which input shape happens to reach it.
+    forge_backed = result.key_source in ("forge", "flag")
     # Level 2 implies level 1 (docs/LEVELS.md): a pass must carry BOTH a valid signature and
     # a declared AI-use mode. The verifier answers the first question only, so the second is
     # enforced here, at the gate — the layer that is allowed to have a policy.
-    would_pass = verified and disclosure_present
+    would_pass = verified and disclosure_present and forge_backed
     gate_pass = (not require) or would_pass
     # Populated whenever the contribution would NOT clear a gate, even at require=false, so
     # an informational run previews exactly what enabling the gate would say. Empty means
     # there is nothing to report — never a generic "not verifiable" a job might post anyway.
     fail_message = "" if would_pass else _fail_message(
-        result.status, result.detail, disclosure_present=disclosure_present)
+        result.status, result.detail, disclosure_present=disclosure_present,
+        key_source=result.key_source)
 
     stats = change.get("stats") if isinstance(change.get("stats"), dict) else None
     claimed_files = change.get("files_changed")

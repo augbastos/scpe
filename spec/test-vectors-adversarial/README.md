@@ -8,9 +8,10 @@ eighteen normative vectors in `../test-vectors/` and not a new protocol capabili
 across `reference/standalone/verify_envelope.py`, `impl/go/cmd/scpe-verify`, and `impl/rust`'s
 `scpe-verify` binary (see each `expected.json`'s note — free-text `detail` wording differs
 between implementations, exactly as `CONTRIBUTING.md` says it may; `status` does not).
-One exception, flagged in its own note: `duplicate-manifest-keys` was re-expected when the
-duplicate-key rule (`SPEC.md` §4.1) landed — read off the three implementations of that rule,
-not yet re-run against their built binaries.
+That includes `duplicate-manifest-keys`, which was re-expected when the duplicate-key rule
+(`SPEC.md` §4.1) landed: all three binaries were rebuilt and run against it, and all three
+return `signature-invalid`, the Python reference with the detail
+`manifest unparsable: duplicate JSON key 'spec_version'`.
 
 ## Why this directory is a sibling of `spec/test-vectors/`, not a subdirectory of it
 
@@ -29,7 +30,7 @@ edited.
 
 | Vector | What it probes | Real status (all 3 impls) |
 |---|---|---|
-| `duplicate-manifest-keys` | top-level `spec_version` repeated (first: `scpe/0.1`, last: `scpe/9.9`) — the duplicate-key rejection of SPEC §4.1 | `signature-invalid` † |
+| `duplicate-manifest-keys` | top-level `spec_version` repeated (first: `scpe/0.1`, last: `scpe/9.9`) — the duplicate-key rejection of SPEC §4.1 | `signature-invalid` |
 | `manifest-oversize-rejected` | manifest.json > 1 MiB, otherwise identical to `valid-minimal` | `unattested` |
 | `subject-with-slash` | `identity.subject` contains `/` (no `..`) — charset rejection, not the traversal check | `identity-unverifiable` |
 | `wrong-sshsig-namespace` | signature produced with SSHSIG namespace `not-scpe` instead of `scpe/0.1` | `signature-invalid` |
@@ -37,9 +38,7 @@ edited.
 | `truncated-signature` | genuine SSHSIG blob cut to two-thirds length; manifest untouched | `signature-invalid` |
 | `invalid-utf8-diff` | code-change diff carrying an invalid UTF-8 byte (0xFF), anchored at the byte level | `verified` |
 
-† `duplicate-manifest-keys` is the one row not copied from a verifier run: its status is read
-off the three implementations of the `SPEC.md` §4.1 duplicate-key rule and is pending a re-run.
-Every other row is observed output.
+Every row is observed output, re-run after the SPEC §4.1 duplicate-key rule landed.
 
 Five of the seven confirm an implemented defense does exactly what it is supposed to
 (`subject-with-slash`, `wrong-sshsig-namespace`, `utf8-bom-manifest`, `truncated-signature`,

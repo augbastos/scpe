@@ -16,7 +16,7 @@
   <img alt="spec" src="https://img.shields.io/badge/spec-scpe%2F0.1-41c257?style=flat-square&labelColor=0b0b0c">
   <img alt="python" src="https://img.shields.io/badge/python-3.11%2B-41c257?style=flat-square&labelColor=0b0b0c">
   <img alt="license" src="https://img.shields.io/badge/code-Apache--2.0-41c257?style=flat-square&labelColor=0b0b0c">
-  <img alt="status" src="https://img.shields.io/badge/v0.1-early-d29922?style=flat-square&labelColor=0b0b0c">
+  <img alt="status" src="https://img.shields.io/badge/v0.2-early-d29922?style=flat-square&labelColor=0b0b0c">
 </p>
 
 An open protocol for two questions a pull request cannot answer today: **who signed this
