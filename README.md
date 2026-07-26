@@ -5,7 +5,7 @@
 <h1 align="center">SCPE</h1>
 
 <p align="center">
-  <b>A protocol for verifiable digital artifacts.</b><br>
+  <b>Know who signed a contribution — and which AI they said they used.</b><br>
   A single envelope. Multiple specifications.<br>
   <i>Merge code, not claims.</i>
 </p>
@@ -19,23 +19,22 @@
   <img alt="status" src="https://img.shields.io/badge/v0.1-early-d29922?style=flat-square&labelColor=0b0b0c">
 </p>
 
-An open protocol that lets a repository owner verify — with no SCPE server and no new
-accounts — *who* made a pull request and that *nothing was tampered with*, then turn on a
-policy that only merges contributions they can verify. There is no SCPE server, ever: reaching
-the contributor's git host is one HTTPS GET, for keys it already publishes — and it is the
-*last* of three key anchors, after a keys file the owner supplies and one bundled inside the
-submission, both of which verify with zero network calls. The verifier reports which anchor
-answered as `key_source`; a policy that needs a real forge account requires
-`key_source == "forge"`.
+An open protocol for two questions a pull request cannot answer today: **who signed this
+change**, and **what did they declare about AI use** — with proof that the diff is
+byte-for-byte what they signed. No SCPE server, no new accounts, no new keys: the contributor
+signs with the SSH key already on their git host, and the owner re-derives everything with
+`ssh-keygen` and `git`.
+
+The AI-use disclosure is **signed**, not typed into a form. That is the whole difference. A
+signature does not make a claim true — it makes it *attributable* and *tamper-evident*: bound
+to one identity and to this exact diff, so it cannot be edited afterwards or quietly attached
+to different code. Whether someone told the truth about their tools stays a human judgement;
+SCPE makes sure the claim, the author, and the change cannot be separated.
 
 When a PR arrives from someone you don't know — a person, or increasingly an AI agent — trust
-today rests on a GitHub username, the platform, and reading the diff by eye. SCPE adds a
-cryptographic answer to two questions the platform doesn't: **who really produced this change**,
-and **is the diff exactly what they signed** — carrying a signed AI-use disclosure (and,
-optionally, a machine-attribution record) alongside. The owner re-derives everything with
-`ssh-keygen`, `git`, and a key set — the public keys the contributor's git host already
-publishes, or a keys file, with `key_source` naming which one answered. There is no SCPE
-server, so there is nothing to trust and nothing to shut down.
+today rests on a username, the platform, and reading the diff by eye. SCPE replaces the first
+two with something the owner can check locally, and leaves the third where it belongs. There
+is no SCPE server, so there is nothing to trust and nothing to shut down.
 
 **SCPE standardizes evidence, not content.** It never says an artifact is good, true, or safe —
 it standardizes how verifiable evidence (who produced it, that it's untampered, and any signed
