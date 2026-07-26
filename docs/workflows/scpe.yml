@@ -14,7 +14,7 @@ name: scpe
 #                    installs nothing at all, so the only binaries it runs are the
 #                    runner's own pre-installed `python3` and `gh`.
 #
-# GATE MODE (policy, opt-in): set `require: "true"` on the `augbastos/scpe@v1`
+# GATE MODE (policy, opt-in): set `require: "true"` on the `augbastos/scpe@v0.2`
 # step below to make this repository REQUIRE a signed scpe contribution. A PR with
 # no attestation, or any status other than "verified" (spec scpe/0.1 §8), then
 # FAILS this workflow's "seal" job and posts "❌ Not verifiable" instead of the
@@ -64,7 +64,7 @@ jobs:
       - run: pip install pytest
 
       - id: seal                       # deterministic risk + tests, no LLM, no secrets
-        uses: augbastos/scpe@v1
+        uses: augbastos/scpe@v0.2
         with:
           require: "false"             # flip to "true" to require a signed contribution
           # level: "1"                 # zero-friction mode: AI-disclosure lint only,

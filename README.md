@@ -161,11 +161,15 @@ Add a workflow that verifies every PR and posts a seal. Set `require` to gate me
 
 ```yaml
 # .github/workflows/scpe.yml — see docs/workflows/scpe.yml for the fork-safe full version
-- uses: augbastos/scpe@v1
+- uses: augbastos/scpe@v0.2
   with:
     level: "1"        # 1 = disclosure lint · 2 = signed envelope required
     require: "true"   # fail the check on anything not verifiable
 ```
+
+Pin the exact tag while the protocol is pre-1.0. `v0.2` is the first release in which the
+Action verifies the `scpe/0.1` envelope itself; `v0.1.x` verified a different, now-removed
+format, so upgrading from it is a behaviour change and not a patch.
 
 The Action uses a fork-safe two-job split: the untrusted job (which runs contributor code) holds
 no secrets; only a trusted follow-up job posts the comment. Neither level installs anything in the
