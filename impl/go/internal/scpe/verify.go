@@ -11,6 +11,11 @@
 // Statuses (SPEC §8): unattested, unsupported-version, unsupported-provider,
 // unsupported-subject, identity-unverifiable, signature-invalid, tampered,
 // verified.
+//
+// Alongside the status a result discloses `key_source` -- which tier of the §8
+// step 4 precedence actually anchored the identity. All three tiers can end in
+// `verified`, but they are three very different trust stories, and the status
+// alone cannot tell them apart.
 package scpe
 
 import (
@@ -78,19 +83,39 @@ var providerHosts = map[string]providerHost{
 	"local":    {true, ""},
 }
 
+// The three tiers of the §8 step 4 key precedence, reported verbatim as
+// `key_source`. Disclosure only: which tier won never changes the status.
+//
+// The distinction that matters is `bundled` vs `forge`. A `keys` file carried
+// inside the input is chosen by whoever SUBMITTED the package, so a manifest
+// claiming a `github` identity can reach `verified` against keys that never
+// came from github.com. That is not a bug -- it is what lets the 18 normative
+// vectors run offline -- but leaving it invisible would let a self-anchored
+// package pass for a forge-anchored one.
+const (
+	keySourceFlag    = "flag"    // operator passed --keys: the verifier's owner chose the anchor
+	keySourceBundled = "bundled" // `keys` file shipped inside the input: the submitter chose it
+	keySourceForge   = "forge"   // fetched over HTTPS from the provider's fixed host
+)
+
 // Safe-subject rule (SPEC §8): one predictable path segment, no traversal.
 var safeSubjectRE = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$`)
 
 var attestationRE = regexp.MustCompile(`(?s)<!--\s*SCPE-ATTESTATION-v1\s*\n(.*?)\n\s*-->`)
 
 // Result is the outcome of Verify: a status string (SPEC §8), free-text
-// detail, the per-attestation summary (SPEC §5.3/§8 step 8), and the advisory
-// `profile` label (SPEC §13), surfaced but never dispatched.
+// detail, the per-attestation summary (SPEC §5.3/§8 step 8), the advisory
+// `profile` label (SPEC §13), surfaced but never dispatched, and the key
+// anchor that the identity verdict rests on.
 type Result struct {
 	Status       string
 	Detail       string
 	Attestations []AttEntry
 	Profile      *string // nil == unstamped
+	// KeySource is one of keySourceFlag/Bundled/Forge; nil means the verdict was
+	// reached before §8 step 4, so no key material was ever consulted and there
+	// is nothing to disclose.
+	KeySource *string
 }
 
 // AttEntry mirrors the Python {"type": ..., "status": ...} per-entry summary.
@@ -287,7 +312,98 @@ func parseManifest(manifestBytes []byte) (map[string]interface{}, error) {
 	if !ok {
 		return nil, errors.New("manifest is not a JSON object")
 	}
+	// Only now that the bytes are known to be one well-formed JSON object: a
+	// repeated member name would have been collapsed silently above.
+	if err := checkNoDuplicateKeys(manifestBytes); err != nil {
+		return nil, err
+	}
 	return m, nil
+}
+
+// jsonFrame is one open container in the token walk below. `seen` is nil for an
+// array, whose tokens are all values; for an object it accumulates the member
+// names already read, and expectKey says whether the next token is a name.
+type jsonFrame struct {
+	seen      map[string]bool
+	expectKey bool
+}
+
+// checkNoDuplicateKeys rejects a manifest that repeats a member name inside any
+// JSON object, at any nesting depth.
+//
+// This is the one place where "the signature covers the exact bytes" (SPEC §4.1)
+// stops being enough on its own. RFC 8259 leaves duplicate names undefined, so
+// every parser resolves them silently and no two are required to agree: Go's
+// encoding/json and Python's json both keep the LAST occurrence, but a verifier
+// built on a first-wins parser would read DIFFERENT field values out of the SAME
+// signed bytes and hand down a different verdict. Refusing such a manifest is
+// the only resolution that keeps independent implementations in agreement, so it
+// is a MUST for every conforming verifier, not a Go-specific hardening.
+//
+// encoding/json offers no hook equivalent to Python's object_pairs_hook --
+// Unmarshal collapses the duplicates before any hook could observe them -- so
+// this is a second pass over the same bytes. Decoder.Token() is the only stdlib
+// API that surfaces member names one at a time, and walking it with an explicit
+// container stack is what makes the check depth-independent: a nested object or
+// array only pushes a frame, it never disturbs the parent's name/value rhythm.
+// The cost is one extra scan of a buffer already capped at 1 MiB.
+func checkNoDuplicateKeys(manifestBytes []byte) error {
+	dec := json.NewDecoder(bytes.NewReader(manifestBytes))
+	var stack []*jsonFrame
+	// valueRead advances the enclosing object past a member value, so the next
+	// string token there is read as a name again. It fires for scalars AND for
+	// the `{`/`[` that opens a nested container -- that ordering is what keeps
+	// the parent frame correct once the child is popped.
+	valueRead := func() {
+		if n := len(stack); n > 0 && stack[n-1].seen != nil {
+			stack[n-1].expectKey = true
+		}
+	}
+	for {
+		tok, err := dec.Token()
+		if err != nil {
+			// Includes the normal io.EOF. A syntax error is unreachable here:
+			// parseManifest already accepted these exact bytes as a single
+			// well-formed value, and re-reporting one in different words would
+			// only add a second spelling of the same failure.
+			return nil
+		}
+		switch t := tok.(type) {
+		case json.Delim:
+			switch t {
+			case '{':
+				valueRead()
+				stack = append(stack, &jsonFrame{seen: map[string]bool{}, expectKey: true})
+			case '[':
+				valueRead()
+				stack = append(stack, &jsonFrame{})
+			default: // '}' or ']'
+				// Token() never emits a close without its matching open, and the
+				// buffer was already accepted by Decode -- but this walks
+				// attacker-controlled bytes, so an underflow is checked rather
+				// than assumed. A panic here would be a crash, not a verdict.
+				if len(stack) == 0 {
+					return nil
+				}
+				stack = stack[:len(stack)-1]
+				if len(stack) == 0 {
+					return nil // the root value is closed; nothing follows but whitespace
+				}
+			}
+		case string:
+			if n := len(stack); n > 0 && stack[n-1].seen != nil && stack[n-1].expectKey {
+				if stack[n-1].seen[t] {
+					return fmt.Errorf("duplicate JSON key %q", t)
+				}
+				stack[n-1].seen[t] = true
+				stack[n-1].expectKey = false
+				continue
+			}
+			valueRead()
+		default: // number, bool, null
+			valueRead()
+		}
+	}
 }
 
 func versionSupported(m map[string]interface{}) bool {
@@ -506,8 +622,13 @@ func Verify(path string, opts Options) Result {
 	if p, ok := m["profile"].(string); ok {
 		profile = &p
 	}
+	// Assigned in step 4 and read back through this closure, so every outcome
+	// downstream of the key selection discloses its anchor and every outcome
+	// upstream of it reports nil -- no key was consulted, so none is claimed.
+	var keySource *string
 	R := func(status, detail string, attestations []AttEntry) Result {
 		r := res(status, detail, profile)
+		r.KeySource = keySource
 		if attestations != nil {
 			r.Attestations = attestations
 		}
@@ -540,13 +661,18 @@ func Verify(path string, opts Options) Result {
 	host := ph.host // "" for the `local` provider
 
 	// 4. keys -- --keys flag > keys file shipped beside the manifest > network.
+	//    Whichever tier wins is recorded in keySource: the precedence is
+	//    unchanged, but the answer is no longer silent (see the keySource*
+	//    constants for why `bundled` in particular has to be visible).
 	keysBytes := in.keys
+	source := keySourceBundled
 	if opts.KeysFile != "" {
 		b, err := os.ReadFile(opts.KeysFile)
 		if err != nil {
 			return R("identity-unverifiable", fmt.Sprintf("cannot read --keys file: %v", err), nil)
 		}
 		keysBytes = b
+		source = keySourceFlag
 	}
 	if keysBytes == nil {
 		if host == "" {
@@ -557,7 +683,11 @@ func Verify(path string, opts Options) Result {
 			return R("identity-unverifiable", fmt.Sprintf("key fetch failed: %v", err), nil)
 		}
 		keysBytes = b
+		source = keySourceForge
 	}
+	// Claimed only once bytes are actually in hand: the two returns above got
+	// none, so they must not report a tier they never read from.
+	keySource = &source
 	if len(bytes.TrimSpace(keysBytes)) == 0 {
 		return R("identity-unverifiable", "no published keys", nil)
 	}

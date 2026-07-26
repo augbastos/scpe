@@ -20,7 +20,16 @@
 //!                   the PR).
 //! --artifact FILE   verify an `artifact` subject against these bytes
 //!                   (standalone form, where the artifact is not enclosed).
-//! --json            machine-readable output.
+//! --json            machine-readable output: `status`, `attestations`,
+//!                   `profile`, `key_source` and `detail`.
+//!
+//! `key_source` is "flag" | "bundled" | "forge" — which tier of SPEC §8 step 4
+//! supplied the public keys — or null when no key bytes were ever consulted.
+//! It matters because `bundled` keys ride inside the input and are chosen by
+//! whoever submitted it, so a `bundled` pass never involved the provider's
+//! host at all. The human line shows the same thing as `[key_source: …]`.
+//! Like `profile`, it is always present in `--json` — null rather than absent
+//! — so a consumer can read the anchor without probing for the field.
 //!
 //! Exit code 0 iff the result is `verified` — same contract as the Go and
 //! Python reference verifiers.
@@ -108,6 +117,7 @@ fn main() -> ExitCode {
             "status": res.status,
             "attestations": atts,
             "profile": res.profile,
+            "key_source": res.key_source.map(scpe::KeySource::as_str),
             "detail": res.detail,
         });
         println!("{}", serde_json::to_string(&out).unwrap());
@@ -130,6 +140,12 @@ fn main() -> ExitCode {
             if !p.is_empty() {
                 line += &format!(" [profile: {p}]");
             }
+        }
+        // A bare "[OK] verified" reads the same whether the keys came from the
+        // forge or from the submitted package itself; the anchor is printed so a
+        // human reading one line is not left to assume the stronger of the two.
+        if let Some(ks) = res.key_source {
+            line += &format!(" [key_source: {}]", ks.as_str());
         }
         if !res.detail.is_empty() {
             line += &format!(" — {}", res.detail);

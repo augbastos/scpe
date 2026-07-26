@@ -47,6 +47,14 @@ generalizations over a code-only envelope, both entirely inside the signed bytes
 
 Statuses (SPEC §8): unattested · unsupported-version · unsupported-provider ·
 unsupported-subject · identity-unverifiable · signature-invalid · tampered · verified
+
+Alongside the status every result discloses `key_source` — which of the three §8 step 4
+anchors supplied the keys the verdict rests on: `flag` (the operator's --keys), `bundled`
+(a `keys` file carried inside the input) or `forge` (fetched from the provider's fixed
+host). All three can end in `verified` and they are not the same claim: a `bundled` key
+set is chosen by whoever SUBMITTED the package, so `verified` there means "these bytes
+match a key that travelled with them", not "the named forge account signed this". The
+field changes no status — it only stops three different trust stories from looking alike.
 """
 from __future__ import annotations
 
@@ -107,15 +115,21 @@ ATTESTATION_RE = re.compile(
 class Result:
     def __init__(self, status: str, detail: str = "",
                  attestations: list[dict] | None = None,
-                 profile: str | None = None):
+                 profile: str | None = None,
+                 key_source: str | None = None):
         # `attestations` is a per-entry [{type, status}] summary (SPEC §5/§8 step 8);
         # an empty list means the manifest carried no attestations.
         # `profile` is the advisory domain-convention label (SPEC §13), surfaced verbatim
         # from the manifest. It NEVER influences status: it is displayed, not dispatched
         # (SPEC §13.2). None means the manifest stamped no profile (or was unparsable).
+        # `key_source` is the §8 step 4 anchor that supplied the keys this verdict rests
+        # on — "flag", "bundled" or "forge" (see step 4). None means no usable key set was
+        # ever obtained, i.e. the verdict was reached at or before that step. Like
+        # `profile` it is disclosure, not dispatch: it never changes the status.
         self.status, self.detail = status, detail
         self.attestations = attestations or []
         self.profile = profile
+        self.key_source = key_source
 
 
 # ---------------------------------------------------------------- locate (§8.1)
@@ -192,8 +206,31 @@ def _from_zip(blob: bytes) -> tuple[bytes, bytes, bytes | None, bytes | None]:
 
 # ----------------------------------------------------------------- parse (§8.2)
 
+def _no_duplicate_keys(pairs: list[tuple[str, object]]) -> dict:
+    """`object_pairs_hook` that REFUSES a repeated key instead of resolving one (SPEC §4.1).
+
+    RFC 8259 leaves duplicate names implementation-defined — last-wins, first-wins and
+    reject are all conforming, and real JSON libraries ship all three. So a manifest with
+    a repeated key is ONE byte string that two honest verifiers can read as two different
+    documents and reach two different verdicts on. That contradicts the property the whole
+    protocol is built to protect: the signature covers bytes, so identical bytes must yield
+    an identical status everywhere. Rejecting is the only resolution that does not require
+    this spec to pick a winner AND every implementation's parser to have picked the same
+    one. `json` calls this hook once per object, so every nesting depth is covered by
+    construction — a duplicated `subject` or `contributor` is caught as surely as a
+    duplicated `spec_version`.
+    """
+    seen: set[str] = set()
+    for key, _ in pairs:
+        if key in seen:
+            raise ValueError(f"duplicate JSON key {key!r}")
+        seen.add(key)
+    return dict(pairs)
+
+
 def parse_manifest(manifest_bytes: bytes) -> dict:
-    m = json.loads(manifest_bytes.decode("utf-8"))
+    m = json.loads(manifest_bytes.decode("utf-8"),
+                   object_pairs_hook=_no_duplicate_keys)
     if not isinstance(m, dict):
         raise ValueError("manifest is not a JSON object")
     return m
@@ -358,8 +395,14 @@ def verify(path: Path, keys_file: Path | None, diff_file: Path | None,
     prof = m.get("profile")
     prof = prof if isinstance(prof, str) else None
 
+    # The §8 step 4 anchor that ends up supplying keys, stamped on every Result from that
+    # point on. It stays None until a non-empty key set is actually in hand, so no verdict
+    # ever claims an anchor it did not use. `R` reads it at call time, which is why the
+    # single decision path below needs no extra plumbing.
+    key_source: str | None = None
+
     def R(status: str, detail: str = "", attestations: list[dict] | None = None) -> Result:
-        return Result(status, detail, attestations, profile=prof)
+        return Result(status, detail, attestations, profile=prof, key_source=key_source)
 
     if not version_supported(m):
         return R("unsupported-version",
@@ -380,9 +423,22 @@ def verify(path: Path, keys_file: Path | None, diff_file: Path | None,
 
     # 4. keys — --keys flag > keys file shipped beside the manifest > network.
     #    `local` never fetches: its keys MUST be supplied out of band by the owner.
+    #
+    #    Which tier won is recorded as `key_source`, because the three are not the same
+    #    claim and the verdict word cannot tell them apart. A `keys` file riding INSIDE
+    #    the input was chosen by whoever submitted it, so a manifest naming a `github`
+    #    identity can reach `verified` against a key github.com never published —
+    #    self-anchored, yet spelled exactly like a forge-anchored pass. That path is not
+    #    a bug and is not removed here: it is what lets the eighteen normative vectors
+    #    verify offline, and what `local` exists for. Disclosing the anchor is the fix;
+    #    refusing one would take the conformance suite, air-gapped review and every
+    #    self-hosted deployment down with it.
     if keys_file is not None:
+        source = "flag"                    # the verifier's owner named the key set by hand
         keys_bytes = keys_file.read_bytes()
-    if keys_bytes is None:
+    elif keys_bytes is not None:
+        source = "bundled"                 # carried inside the input: submitter-controlled
+    else:
         if host is None:
             return R("identity-unverifiable",
                      "local provider requires an owner-supplied keys file")
@@ -390,8 +446,12 @@ def verify(path: Path, keys_file: Path | None, diff_file: Path | None,
             keys_bytes = fetch_keys(host, subject)
         except OSError as exc:
             return R("identity-unverifiable", f"key fetch failed: {exc}")
+        source = "forge"                   # live from the provider's fixed host
     if not keys_bytes.strip():
         return R("identity-unverifiable", "no published keys")
+    # Past the empty check, and only here: an anchor that yielded nothing usable is not an
+    # anchor this verdict rests on, so `no published keys` above reports no key_source.
+    key_source = source
 
     # 5-6. allowed signers + SSHSIG
     if not verify_signature(manifest_bytes, sig_bytes, subject, keys_bytes):
@@ -447,7 +507,8 @@ def main(argv: list[str] | None = None) -> int:
     res = verify(args.path, args.keys, args.diff, args.artifact)
     if args.json:
         print(json.dumps({"status": res.status, "attestations": res.attestations,
-                          "profile": res.profile, "detail": res.detail}))
+                          "key_source": res.key_source, "profile": res.profile,
+                          "detail": res.detail}))
     else:
         mark = "OK" if res.status == "verified" else "NO"
         line = f"[{mark}] {res.status}"
@@ -457,6 +518,10 @@ def main(argv: list[str] | None = None) -> int:
                 line += f" (attestations: {summ})"
             else:
                 line += " (attestations: none)"
+        # Surface the key anchor (SPEC §8 step 4) on every result that had one, so a
+        # self-anchored `bundled` pass never reads on screen like a forge-backed one.
+        if res.key_source:
+            line += f" [keys: {res.key_source}]"
         # Surface the advisory profile label (SPEC §13.2): displayed, never dispatched.
         if res.profile:
             line += f" [profile: {res.profile}]"

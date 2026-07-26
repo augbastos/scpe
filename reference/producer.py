@@ -539,6 +539,12 @@ def _cmd_verify(args) -> int:
             atts = res.get("attestations") or []
             summ = ", ".join(f"{a['type']}={a['status']}" for a in atts) or "none"
             line += f" (attestations: {summ})"
+        # Same line shape the standalone verifier prints: the key anchor (SPEC §8 step 4)
+        # rides along, so `verified` here discloses whether it was forge-backed or
+        # anchored on keys that arrived with the package. `.get` because this renders
+        # whatever JSON the verifier subprocess emitted, including an older one's.
+        if res.get("key_source"):
+            line += f" [keys: {res['key_source']}]"
         if res.get("profile"):
             line += f" [profile: {res['profile']}]"
         if res.get("detail"):

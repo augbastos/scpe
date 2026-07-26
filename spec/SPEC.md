@@ -83,7 +83,16 @@ Three claims are easy to conflate; SCPE provides exactly one of them.
 `<host>/<subject>.keys` — together with a provider→subject identity assertion (§8). It
 proves exactly: *a key published on this `(provider, subject)` account signed exactly
 these bytes.* That is a statement about the **signing act**, not about the signer's
-present state. It does **not** provide:
+present state.
+
+*Published* is load-bearing there, and it is only earned when the verifier actually
+consulted the provider. Keys can also reach a verifier from its operator or from inside
+the submitted input (§8 step 4), so the anchor that answered is reported as
+`key_source`: `forge` earns the sentence above in full; `flag` earns as much as the
+operator's own key set is worth; `bundled` proves the signing act alone, against
+material the submitter chose, and asserts nothing about any forge account.
+
+It does **not** provide:
 
 - **Authentication.** SCPE never checks that the account holder is present, in control,
   or even still exists. A key lifted from a compromised account, or one whose owner has
@@ -191,6 +200,18 @@ already means, and the rationale is recorded in
   opaque bytes (a zip member, a base64 blob in a PR body) and is never re-serialized in
   flight, so any reformatting of a signed manifest reads as tampering at §8 step 6 —
   the correct outcome.
+- **No duplicate keys.** No object in `manifest.json` may repeat a key, at **any**
+  nesting depth, and a verifier MUST reject a manifest that does (§8 step 2 →
+  `signature-invalid`). RFC 8259 leaves duplicate-key resolution
+  implementation-defined: last-wins, first-wins, and reject are all conforming
+  choices, and real JSON libraries ship all three. So a manifest with a repeated key
+  is one byte string that two honest verifiers can read as two different documents
+  and reach two different verdicts on — which contradicts the property every other
+  rule here exists to protect: identical signed bytes yield an identical verdict
+  everywhere. Rejecting is the only resolution that does not require this spec to pick
+  a winner *and* every implementation's JSON parser to have picked the same one. Note
+  the asymmetry with the bullet above: there, differing bytes are deliberately
+  different envelopes; here, identical bytes must not be two documents.
 - **Defensive size cap.** A verifier MUST bound every member's size before it is parsed
   or used, to refuse a zip-bomb or oversized member (THREAT_MODEL §3). The reference
   verifiers cap the (decompressed) `manifest.json` at **1 MiB** (`1 << 20` bytes,
@@ -392,8 +413,19 @@ status code; verification stops at the first failure.
 1. **Locate.** Extract the attestation from the transport (§9) or open the
    standalone envelope. If none is present → **`unattested`** (this is a state, not
    an error: a plain PR without SCPE is simply unattested).
-2. **Parse.** Read `manifest.json`. If `spec_version` has an unknown MAJOR
-   (per §11) → **`unsupported-version`**.
+2. **Parse.** Read `manifest.json` as a JSON object. A manifest the verifier cannot
+   read unambiguously — not valid UTF-8, not valid JSON, not a JSON object, or
+   containing a duplicate key in any object at any nesting depth (§4.1) →
+   **`signature-invalid`**, the reason carried in the human-readable detail.
+   That status is a reuse, not a claim about the SSHSIG: the signature over those
+   bytes may well be intact, but bytes that admit more than one reading are not a
+   well-formed signed message, and §8 spends no separate status on a malformed
+   manifest. The rejection belongs **here**, ahead of the signature and integrity
+   checks, so that ambiguous content never reaches the `subject.type` dispatch of
+   step 7 — a duplicated `subject`, `contributor`, or `attestations` would otherwise
+   be resolved silently, by a rule the protocol never chose, on the way to a verdict.
+   Then, if `spec_version` has an unknown MAJOR (per §11) →
+   **`unsupported-version`**.
 3. **Resolve the provider.** Read `contributor.identity = { provider, subject }`.
    Look up `provider` in the **fixed provider registry** below.
    - If `provider` is absent from the registry — unknown, or reserved-but-not-yet-
@@ -434,21 +466,60 @@ status code; verification stops at the first failure.
    **`identity-unverifiable`**. This forbids `/`, whitespace, `@`, `:`, and path
    traversal, so the resolved URL is always exactly one predictable path segment
    under the fixed host — no breakout, no host injection.
-4. **Fetch or read keys.**
-   - forge provider (`github` / `gitlab` / `codeberg`): fetch
-     `https://<fixed-host>/<subject>.keys`, where `<fixed-host>` comes from the
-     registry above. The fetch MUST use **HTTPS with TLS certificate and hostname
-     validation**, and MUST **NOT follow HTTP redirects**: a 3xx response — or any
-     attempt to redirect to a different host, scheme, or port — MUST be treated as a
-     fetch failure (→ **`identity-unverifiable`**), never followed. The verifier
-     contacts exactly the fixed host and no other; the final response URL MUST still
-     be that host over HTTPS or the fetch is rejected. This keeps the "SSRF-safe by
-     construction" invariant intact even as providers or owner-configured hosts are
-     added. Unreachable or empty → **`identity-unverifiable`**.
-   - `local`: read the keys file the verifier's owner supplied via configuration
-     (the reference verifier's `--keys FILE`). Missing or empty →
-     **`identity-unverifiable`**. No network access occurs — `local` is the fully
-     offline / air-gapped / self-hosted path.
+4. **Fetch or read keys.** Keys reach the verifier through exactly three **anchors**,
+   tried in this precedence order:
+
+   | Order | `key_source` | Anchor | Chosen by |
+   |---|---|---|---|
+   | 1 | `flag` | keys the verifier's owner supplies out of band (the reference verifiers' `--keys FILE`) | the **verifier's owner** |
+   | 2 | `bundled` | a `keys` file carried inside the input, beside `manifest.json` | whoever **submitted** the input |
+   | 3 | `forge` | `https://<fixed-host>/<subject>.keys` for a forge provider | the **provider account** |
+
+   - **`flag`** wins over everything: an owner who names a key set for this run has
+     already answered the trust question by hand.
+   - **`bundled`** is read only when no owner-supplied keys were given. This anchor is
+     what lets an envelope verify with no network at all — it is how a consumer checks
+     an unpacked directory that carries its own `keys` file beside the manifest, the
+     shape the eighteen normative vectors ship in (Appendix A records which anchor the
+     conformance harnesses use). **It is not evidence of forge identity.** The `keys`
+     file arrives inside the input, from the same party that produced the manifest, so
+     a package can declare any `(provider, subject)` it likes and enclose the key that
+     matches its own signature — reaching `verified` without `github.com`, or any other
+     forge, ever being contacted. That is a legitimate offline verification and an
+     illegitimate proof that the named forge account signed anything; the two are
+     indistinguishable in the verdict word, which is exactly why `key_source` exists.
+   - **`forge`** is reached only when neither anchor above supplied keys, and only for
+     `github` / `gitlab` / `codeberg`: fetch `https://<fixed-host>/<subject>.keys`,
+     where `<fixed-host>` comes from the registry above. The fetch MUST use **HTTPS
+     with TLS certificate and hostname validation**, and MUST **NOT follow HTTP
+     redirects**: a 3xx response — or any attempt to redirect to a different host,
+     scheme, or port — MUST be treated as a fetch failure (→
+     **`identity-unverifiable`**), never followed. The verifier contacts exactly the
+     fixed host and no other; the final response URL MUST still be that host over
+     HTTPS or the fetch is rejected. This keeps the "SSRF-safe by construction"
+     invariant intact even as providers or owner-configured hosts are added.
+   - `local` has no host and therefore never reaches the `forge` anchor. With neither
+     `flag` nor `bundled` keys it is **`identity-unverifiable`** — no network access
+     occurs, which is what makes `local` the fully offline / air-gapped / self-hosted
+     path.
+   - Keys missing, unreachable, or empty at the anchor that was selected →
+     **`identity-unverifiable`**.
+
+   > **`key_source` (normative).** A verifier MUST surface which anchor supplied the
+   > keys it used: a top-level `key_source` field in machine-readable output, valued
+   > `"flag"`, `"bundled"`, or `"forge"`, and shown in human-readable output whenever
+   > it is set. It is set whenever a non-empty key set was obtained — so on `verified`,
+   > and on every later failure that got past this step — and `null` when none was,
+   > including every status reached before this step. `key_source` MUST NOT change the
+   > verdict: all three anchors verify a signature identically and the field adds no
+   > check. It exists because the verdict word alone cannot tell a reviewer whether
+   > `verified` means "the forge publishes this key for this user" or "the submitter
+   > enclosed a key matching its own signature". A consumer that needs the
+   > forge-backed claim MUST require `key_source == "forge"` — or supply the key set
+   > itself and require `"flag"`; a consumer running offline conformance expects
+   > `"bundled"` and is right to. Reporting the anchor is the fix here, not forbidding
+   > one: refusing `bundled` keys would take the conformance suite, air-gapped review,
+   > and every self-hosted deployment offline with it.
 5. **Build the allowed signers file.** One line per fetched key, principal =
    `subject`:
    `<subject> namespaces="scpe/0.1" <key-type> <base64-key>`.
@@ -485,6 +556,8 @@ which normalization); where this summary and §8 differ, §8 wins.
 
 ```
   locate / parse envelope ......  no envelope present ...... unattested
+        |                         manifest unreadable, or .. signature-invalid
+        |                         duplicate JSON key (§4.1)
         | ok
   verify version (MAJOR) .......  unknown MAJOR ............ unsupported-version
         | ok
@@ -506,13 +579,19 @@ Each state maps to §8 as follows:
 
 1. **locate / parse** — §8 steps 1–2: extract the transport attestation or open the
    standalone envelope, then read `manifest.json`. No envelope → `unattested` (a state,
-   not an error); unknown MAJOR → `unsupported-version`.
+   not an error); a manifest that will not parse, or that repeats a key in any object
+   (§4.1), → `signature-invalid` before any key is fetched; unknown MAJOR →
+   `unsupported-version`. This state therefore has two failure exits, which is why the
+   diagram shows them stacked — the machine is still linear, `signature-invalid` is
+   still the same terminal it is further down, and no status is added.
 2. **resolve provider** — §8 step 3 (registry lookup): look up
    `contributor.identity.provider` in the fixed registry. Absent — unknown or
    reserved-but-unimplemented — → `unsupported-provider`.
 3. **verify identity** — §8 step 3 (safe-subject rule) + step 4 (fetch or read keys): a
    malformed `subject`, or keys that are unreachable, empty, or reached only via a
-   cross-host / scheme / port redirect → `identity-unverifiable`.
+   cross-host / scheme / port redirect → `identity-unverifiable`. Which of the three
+   anchors supplied the keys is recorded as `key_source` and reported (§8 step 4); it
+   is not a transition — the machine advances the same way whichever anchor answered.
 4. **verify signature** — §8 steps 5–6: build the allowed-signers file and run
    `ssh-keygen -Y verify` under namespace `scpe/0.1`. Failure → `signature-invalid`.
 5. **verify subject integrity** — §8 step 7, dispatched on `subject.type` (§6.3): a
@@ -699,6 +778,14 @@ closed despite a valid signature), the `identity-unverifiable` safe-subject bran
 `..` traversal username), a `multi-attestation` envelope (a known agent-trace entry
 plus a reserved one surfaced as `present-unverified`), and the signature, integrity,
 version, and attestation outcomes.
+
+All eighteen ship their own `keys` file, so the whole suite runs with no network. The
+three conformance harnesses hand that file to the verifier as owner-supplied keys, so
+they run at the `flag` anchor (§8 step 4); pointing a verifier at the same directory
+without that flag runs at `bundled`. Both are offline, and no vector reaches `forge`.
+What the suite pins is status and attestation behaviour — the `valid-*` vectors'
+`verified` is an offline result, not a claim that any account on `github.com`,
+`gitlab.com`, or `codeberg.org` published those keys.
 
 ## Appendix B. Algorithm agility
 

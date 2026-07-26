@@ -26,6 +26,14 @@
 //
 // --json           machine-readable output.
 //
+// Every result reports `key_source`: which tier of the key precedence anchored
+// the identity -- `flag` (--keys), `bundled` (a `keys` file carried inside the
+// input, so chosen by whoever submitted it), or `forge` (fetched from the
+// provider's host). It is null when the verdict was reached before any key was
+// read. All three tiers can end in `verified`, so a consumer that cares whether
+// an identity was checked against the forge has to read this field, not the
+// status.
+//
 // Exit code 0 iff the result is `verified` -- same contract as the Python
 // reference verifier.
 package main
@@ -107,10 +115,17 @@ func run(argv []string) int {
 			"status":       res.Status,
 			"attestations": res.Attestations,
 			"profile":      nil,
+			"key_source":   nil,
 			"detail":       res.Detail,
 		}
 		if res.Profile != nil {
 			out["profile"] = *res.Profile
+		}
+		// Always emitted, null when no key was consulted -- same contract as
+		// `profile`, so a consumer can read the anchor without probing for the
+		// field's existence.
+		if res.KeySource != nil {
+			out["key_source"] = *res.KeySource
 		}
 		enc, _ := json.Marshal(out)
 		fmt.Println(string(enc))
@@ -136,6 +151,12 @@ func run(argv []string) int {
 		}
 		if res.Profile != nil && *res.Profile != "" {
 			line += fmt.Sprintf(" [profile: %s]", *res.Profile)
+		}
+		// A bare "[OK] verified" reads the same whether the keys came from the
+		// forge or from the submitted package itself; the anchor is printed so a
+		// human reading one line is not left to assume the stronger of the two.
+		if res.KeySource != nil {
+			line += fmt.Sprintf(" [key_source: %s]", *res.KeySource)
 		}
 		if res.Detail != "" {
 			line += " — " + res.Detail

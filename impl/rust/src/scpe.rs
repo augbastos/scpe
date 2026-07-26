@@ -9,6 +9,17 @@
 //! status strings. The only external process invoked is `ssh-keygen -Y
 //! verify` (OpenSSH >= 8.2), same as the Go and Python implementations.
 //!
+//! Two things here go beyond a literal transcription of the reference, and
+//! both are mirrored in the Go and Python verifiers:
+//!
+//!   * a repeated JSON key anywhere in the manifest is a parse failure rather
+//!     than the silent last-one-wins merge every JSON library performs, since
+//!     otherwise the same signed bytes could yield two different verdicts —
+//!     see `find_duplicate_key`;
+//!   * the verdict names which key tier backed it, because a `keys` file that
+//!     rode inside the input was chosen by the submitter, not by the forge —
+//!     see [`KeySource`].
+//!
 //! Conformance contract for this port: the 18 normative vectors under
 //! `spec/test-vectors/` (see `tests/vectors.rs`), all of which exercise the
 //! directory-input path with an owner-supplied `keys` file. The envelope-zip
@@ -23,6 +34,8 @@
 
 use serde_json::{Map, Value};
 use sha2::{Digest, Sha256};
+use std::cell::Cell;
+use std::collections::HashSet;
 use std::fs;
 use std::io::Write;
 use std::path::{Path, PathBuf};
@@ -53,15 +66,56 @@ pub struct AttEntry {
     pub status: String,
 }
 
+/// KeySource names which tier of the §8 step 4 precedence supplied the public
+/// keys the identity check ran against.
+///
+/// All three tiers can end in `verified`, but they are not the same claim: a
+/// `keys` file travelling inside the input is controlled by whoever submitted
+/// the package, so such a package can present a `github` identity without
+/// github.com ever being contacted. That tier is NOT removed — the 18
+/// normative vectors all ship their own `keys` file, which is what lets the
+/// conformance suite run offline — so the honest fix is to say out loud which
+/// anchor was used instead of letting all three look alike.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum KeySource {
+    /// `--keys FILE`: the operator named the anchor out of band.
+    Flag,
+    /// A `keys` file found beside the manifest in the input — submitter-controlled.
+    Bundled,
+    /// Fetched from the provider's host in the fixed registry. Unreachable in
+    /// THIS port as long as `fetch_keys` is the honest stub it is today: the
+    /// tier is wired up so the disclosure is complete the day the fetch lands,
+    /// but a Rust run can only ever report `flag`, `bundled`, or nothing.
+    Forge,
+}
+
+impl KeySource {
+    /// The wire spelling used by `--json` and by the human line.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            KeySource::Flag => "flag",
+            KeySource::Bundled => "bundled",
+            KeySource::Forge => "forge",
+        }
+    }
+}
+
 /// VerifyResult is the outcome of [`verify`]: a status string (SPEC §8),
-/// free-text detail, the per-attestation summary (SPEC §5.3/§8 step 8), and
-/// the advisory `profile` label (SPEC §13), surfaced but never dispatched.
+/// free-text detail, the per-attestation summary (SPEC §5.3/§8 step 8), the
+/// advisory `profile` label (SPEC §13), surfaced but never dispatched, and
+/// the [`KeySource`] the verdict rests on.
+///
+/// `key_source` is `None` whenever the verdict was reached without key bytes
+/// ever being in hand — every outcome upstream of §8 step 4, and step 4's own
+/// three failures (unreadable `--keys`, failed fetch, `local` with no keys):
+/// no key material was consulted, so no tier is claimed.
 #[derive(Debug, Clone)]
 pub struct VerifyResult {
     pub status: String,
     pub detail: String,
     pub attestations: Vec<AttEntry>,
     pub profile: Option<String>,
+    pub key_source: Option<KeySource>,
 }
 
 fn simple_result(status: &str, detail: &str) -> VerifyResult {
@@ -70,6 +124,7 @@ fn simple_result(status: &str, detail: &str) -> VerifyResult {
         detail: detail.to_string(),
         attestations: vec![],
         profile: None,
+        key_source: None,
     }
 }
 
@@ -176,10 +231,128 @@ fn read_optional_capped(path: PathBuf, limit: u64) -> Result<Option<Vec<u8>>, St
 /// check and Go's failed type-assertion reject it.
 fn parse_manifest(manifest_bytes: &[u8]) -> Result<Map<String, Value>, String> {
     let v: Value = serde_json::from_slice(manifest_bytes).map_err(|e| e.to_string())?;
-    match v {
-        Value::Object(m) => Ok(m),
-        _ => Err("manifest is not a JSON object".to_string()),
+    let m = match v {
+        Value::Object(m) => m,
+        _ => return Err("manifest is not a JSON object".to_string()),
+    };
+    // Only now that the bytes are known to be one well-formed JSON object: a
+    // repeated member name was collapsed silently above, and no field may be
+    // read until we know the bytes admit only one reading. Same placement as
+    // the Go port, so the two report the same detail for the same input.
+    if let Some(k) = find_duplicate_key(manifest_bytes) {
+        return Err(format!("duplicate JSON key {k:?}"));
     }
+    Ok(m)
+}
+
+/// find_duplicate_key returns the first key that appears twice inside one and
+/// the same JSON object, at any nesting depth (`None` if there is none).
+///
+/// Why this exists: SPEC §4.1 makes the exact manifest bytes the signed
+/// message, so bytes that admit two readings of one field are not a
+/// well-formed signed message. Every mainstream JSON library resolves the
+/// repeat silently and they do not all agree on how — `serde_json::Map`,
+/// Python's `json` and Go's `encoding/json` all keep the LAST value, but that
+/// is a library accident, not a protocol rule, and a fourth verifier that
+/// kept the first would return a different verdict for identical signed
+/// bytes. All three ports therefore reject the repeat outright.
+///
+/// Why a hand-rolled walk: intercepting map construction in serde needs the
+/// `serde` traits as a direct dependency, and this crate deliberately carries
+/// only two. The walk stays honest about the hard part by handing each raw
+/// quoted key span back to serde_json to unescape, so a key spelled with a
+/// unicode escape collides with the same key spelled plainly — exactly as it
+/// does for Python's `object_pairs_hook` and Go's `json.Decoder` token
+/// stream, which both compare decoded keys too.
+///
+/// The walk assumes `bytes` already parsed as one JSON value — the caller
+/// parses first and returns the library's own error on malformed input —
+/// which is what lets this skip validation and merely track container
+/// nesting. The two give-up branches below (an unterminated string, a key
+/// span serde_json will not decode) are therefore unreachable for anything
+/// that reaches here; they return "no duplicate" rather than invent one,
+/// since a malformed document has already been rejected upstream.
+fn find_duplicate_key(bytes: &[u8]) -> Option<String> {
+    enum Frame {
+        // `expect_key` is what distinguishes a key from a value: it is set by
+        // `{` and by `,`, and cleared by `:`.
+        Object {
+            seen: HashSet<String>,
+            expect_key: bool,
+        },
+        Array,
+    }
+
+    let mut stack: Vec<Frame> = Vec::new();
+    let mut i = 0usize;
+    while i < bytes.len() {
+        match bytes[i] {
+            b'{' => {
+                stack.push(Frame::Object {
+                    seen: HashSet::new(),
+                    expect_key: true,
+                });
+                i += 1;
+            }
+            b'[' => {
+                stack.push(Frame::Array);
+                i += 1;
+            }
+            b'}' | b']' => {
+                stack.pop();
+                i += 1;
+            }
+            b',' => {
+                if let Some(Frame::Object { expect_key, .. }) = stack.last_mut() {
+                    *expect_key = true;
+                }
+                i += 1;
+            }
+            b':' => {
+                if let Some(Frame::Object { expect_key, .. }) = stack.last_mut() {
+                    *expect_key = false;
+                }
+                i += 1;
+            }
+            b'"' => {
+                let end = scan_string_end(bytes, i)?;
+                if let Some(Frame::Object { seen, expect_key }) = stack.last_mut() {
+                    if *expect_key {
+                        let key: String = serde_json::from_slice(&bytes[i..end]).ok()?;
+                        if !seen.insert(key.clone()) {
+                            return Some(key);
+                        }
+                    }
+                }
+                i = end;
+            }
+            // Whitespace and the bytes of numbers/true/false/null: none of
+            // them can be a structural character or a quote, so stepping one
+            // byte at a time is enough.
+            _ => i += 1,
+        }
+    }
+    None
+}
+
+/// scan_string_end takes the index of an opening `"` and returns the index one
+/// past the matching closing `"`, or `None` if the string is unterminated.
+///
+/// A byte scan is exact here: `"` and `\` are single-byte ASCII code points
+/// that can never appear as a continuation byte of a multi-byte UTF-8
+/// sequence — the same reasoning `normalize_diff` relies on.
+fn scan_string_end(bytes: &[u8], start: usize) -> Option<usize> {
+    let mut j = start + 1;
+    while j < bytes.len() {
+        match bytes[j] {
+            // Skip the escape AND the byte it escapes; for `\uXXXX` the four
+            // hex digits that follow are ordinary bytes that cannot be `"`.
+            b'\\' => j += 2,
+            b'"' => return Some(j + 1),
+            _ => j += 1,
+        }
+    }
+    None
 }
 
 fn version_supported(m: &Map<String, Value>) -> bool {
@@ -493,12 +666,18 @@ pub fn verify(path: &Path, opts: &Options) -> VerifyResult {
     // The advisory `profile` label (SPEC §13) is surfaced verbatim on every
     // post-parse outcome but never dispatched.
     let profile = m.get("profile").and_then(Value::as_str).map(str::to_string);
+    // Assigned in step 4 and read back through `r`, so every outcome downstream
+    // of the key selection discloses its anchor and every outcome upstream of
+    // it reports None. A Cell because `r` has to read a value written after it
+    // is defined, which a plain `mut` binding would not allow.
+    let key_source: Cell<Option<KeySource>> = Cell::new(None);
     let r = |status: &str, detail: &str, attestations: Vec<AttEntry>| -> VerifyResult {
         VerifyResult {
             status: status.to_string(),
             detail: detail.to_string(),
             attestations,
             profile: profile.clone(),
+            key_source: key_source.get(),
         }
     };
 
@@ -540,10 +719,17 @@ pub fn verify(path: &Path, opts: &Options) -> VerifyResult {
     };
 
     // 4. keys — --keys flag > keys file shipped beside the manifest > network.
+    //    Whichever tier wins is recorded: the precedence is unchanged, but the
+    //    answer is no longer silent (see KeySource for why `bundled` in
+    //    particular has to be visible).
     let mut keys_bytes = loaded.keys;
+    let mut source = KeySource::Bundled;
     if let Some(kf) = &opts.keys_file {
         match fs::read(kf) {
-            Ok(b) => keys_bytes = Some(b),
+            Ok(b) => {
+                keys_bytes = Some(b);
+                source = KeySource::Flag;
+            }
             Err(e) => {
                 return r(
                     "identity-unverifiable",
@@ -564,7 +750,10 @@ pub fn verify(path: &Path, opts: &Options) -> VerifyResult {
                 );
             }
             match fetch_keys(host.unwrap(), subject) {
-                Ok(b) => b,
+                Ok(b) => {
+                    source = KeySource::Forge;
+                    b
+                }
                 Err(e) => {
                     return r(
                         "identity-unverifiable",
@@ -575,6 +764,9 @@ pub fn verify(path: &Path, opts: &Options) -> VerifyResult {
             }
         }
     };
+    // Claimed only once bytes are actually in hand: the three returns above got
+    // none, so they must not name a tier they never read from.
+    key_source.set(Some(source));
     if is_all_whitespace(&keys_bytes) {
         return r("identity-unverifiable", "no published keys", vec![]);
     }
@@ -666,4 +858,94 @@ pub fn verify(path: &Path, opts: &Options) -> VerifyResult {
 
     // 8. verified — with the per-attestation {type, status} summary.
     r("verified", "", attestations_summary(&m))
+}
+
+// -------------------------------------------------------------------- tests
+
+/// The duplicate-key walk is the only hand-rolled JSON handling in this port,
+/// and the 18 normative vectors contain no repeated key — so it is the one
+/// piece the conformance gate cannot exercise. These cases cover it directly.
+#[cfg(test)]
+mod tests {
+    use super::{find_duplicate_key, parse_manifest};
+
+    #[test]
+    fn flat_duplicate_is_found() {
+        assert_eq!(
+            find_duplicate_key(br#"{"spec_version":"scpe/0.1","spec_version":"scpe/9.9"}"#),
+            Some("spec_version".to_string())
+        );
+    }
+
+    #[test]
+    fn nested_duplicate_is_found() {
+        // The dangerous case the adversarial vector cannot show: a repeat deep
+        // in the identity block resolves silently and could still reach
+        // `verified` under last-wins.
+        assert_eq!(
+            find_duplicate_key(
+                br#"{"contributor":{"identity":{"subject":"octocat","subject":"attacker"}}}"#
+            ),
+            Some("subject".to_string())
+        );
+    }
+
+    #[test]
+    fn same_key_in_sibling_objects_is_not_a_duplicate() {
+        assert_eq!(
+            find_duplicate_key(br#"{"attestations":[{"type":"a"},{"type":"b"}]}"#),
+            None
+        );
+    }
+
+    #[test]
+    fn same_key_in_an_enclosing_object_is_not_a_duplicate() {
+        assert_eq!(find_duplicate_key(br#"{"type":{"type":"nested"}}"#), None);
+    }
+
+    #[test]
+    fn strings_are_skipped_whole() {
+        // Structural bytes inside a key and inside a value must not steer the
+        // walk, or a crafted manifest could hide a repeat from it.
+        assert_eq!(find_duplicate_key(br#"{"a{,:}b":1,"c":2}"#), None);
+        assert_eq!(find_duplicate_key(br#"{"a":"{,:}","b":"a"}"#), None);
+    }
+
+    #[test]
+    fn escaped_and_plain_spellings_of_one_key_collide() {
+        // An object whose second key is the six-character unicode escape for
+        // the letter `a`, spelled byte-wise (0x5c is the backslash) so the
+        // test data cannot be quietly normalized by an editor. Both keys
+        // decode to "a", so this is a repeat that a raw-span comparison would
+        // miss and that Python and Go both catch.
+        let bytes: [u8; 18] = [
+            b'{', b'"', b'a', b'"', b':', b'1', b',', b'"', 0x5c, b'u', b'0', b'0', b'6', b'1',
+            b'"', b':', b'2', b'}',
+        ];
+        assert_eq!(find_duplicate_key(&bytes), Some("a".to_string()));
+    }
+
+    #[test]
+    fn a_clean_manifest_has_no_duplicate() {
+        assert_eq!(
+            find_duplicate_key(
+                br#"{"spec_version":"scpe/0.1","contributor":{"identity":{"provider":"github","subject":"octocat-test"}},"subject":{"type":"artifact","digest":{"sha256":"ab"}}}"#
+            ),
+            None
+        );
+    }
+
+    #[test]
+    fn parse_manifest_reports_the_offending_key() {
+        assert_eq!(
+            parse_manifest(br#"{"a":1,"a":2}"#).unwrap_err(),
+            r#"duplicate JSON key "a""#
+        );
+    }
+
+    #[test]
+    fn parse_manifest_still_accepts_a_clean_object() {
+        let m = parse_manifest(br#"{"spec_version":"scpe/0.1"}"#).expect("clean manifest parses");
+        assert_eq!(m.get("spec_version").and_then(|v| v.as_str()), Some("scpe/0.1"));
+    }
 }
