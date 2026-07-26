@@ -2,7 +2,7 @@
 """SCPE LEVEL 1 — the Action-facing wrapper around disclosure.py.
 
 Invoked by action.yml's untrusted step (no secrets, no signature, no envelope —
-`pipx install scpe` is never even run for this path). It reads the ambient GitHub
+`pipx install scpe-protocol` is never even run for this path). It reads the ambient GitHub
 context the composite action's step already passed through as env vars, asks
 disclosure.detect_disclosure() the one question it answers, and writes results.json
 in the schema the trusted `seal` job (docs/workflows/scpe.yml) already reads:

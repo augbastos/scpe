@@ -15,7 +15,7 @@ question sends you there.
 
 ### Prove it yourself
 - [../spec/test-vectors/](../spec/test-vectors/) — the normative conformance vectors. Pass them and you conform.
-- [../spec/test-vectors-adversarial/](../spec/test-vectors-adversarial/) — adversarial vectors (duplicate keys, oversized manifest, subject traversal, UTF-8 BOM, wrong namespace, truncated signature). Each records the real status all three verifiers agree on — including a documented gap (the 1 MiB cap is enforced on the zip path, not the directory path).
+- [../spec/test-vectors-adversarial/](../spec/test-vectors-adversarial/) — adversarial vectors (duplicate keys, oversized manifest, subject traversal, UTF-8 BOM, wrong namespace, truncated signature). Each records the real status all three verifiers agree on. `manifest-oversize-rejected` is now a **regression guard**, not an open gap: the 1 MiB manifest cap is enforced on the directory-input path as well as the zip path, so the vector expects `unattested`. If any implementation regresses to accepting an oversized directory manifest, that vector flips to `verified` and says so.
 - [../spec/manifest.schema.json](../spec/manifest.schema.json) — a JSON Schema (draft 2020-12) for the manifest structure. Advisory: the normative check is SPEC §8, not the schema.
 - [../reference/](../reference/), [../impl/go/](../impl/go/), and [../impl/rust/](../impl/rust/) — three independent verifiers, in Python, Go, and Rust, that reach the same verdict (status + attestation summary) on the same vectors. Three implementations, one result — that's the point.
 - [implementing-scpe.md](implementing-scpe.md) — implement your own verifier in a weekend.

@@ -6,20 +6,14 @@ never calls a backend. Parsing + a signature check is the whole attack surface, 
 `envelope.unpack` already caps the decompressed size against a zip bomb."""
 from __future__ import annotations
 
+from scpe.changes import count_diff_lines
 from scpe.envelope import unpack, verify_signature
 from scpe.seal import risk_band
 
-
-def _count_changes(diff: str) -> tuple[int, int]:
-    """Added/removed source lines in a unified diff, EXCLUDING the '+++ '/'--- '
-    file-header lines so the counts reflect real edits, not diff headers."""
-    added = removed = 0
-    for line in diff.splitlines():
-        if line.startswith("+") and not line.startswith("+++"):
-            added += 1
-        elif line.startswith("-") and not line.startswith("---"):
-            removed += 1
-    return added, removed
+# Was a verbatim copy of the counter in scpe.changes, including its bug: the
+# '+++'/'---' shortcut dropped real edits whose content starts with '++'/'--'.
+# Two copies meant fixing one and leaving the other wrong, so there is now one.
+_count_changes = count_diff_lines
 
 
 def inspect_envelope(envelope_path) -> dict:

@@ -306,7 +306,10 @@ def test_build_server_registers_all_tools():
 
 def test_build_server_raises_clear_error_without_mcp_sdk(monkeypatch):
     """Simulate `mcp` missing: build_server must raise ImportError with an actionable
-    install hint (scpe[mcp]), never an opaque traceback."""
+    install hint (scpe-protocol[mcp]), never an opaque traceback.
+
+    The hint must name the DISTRIBUTION, not the import package: `scpe` on PyPI belongs
+    to someone else, so `pip install scpe[mcp]` would install a stranger's code."""
     import builtins
     real_import = builtins.__import__
 
@@ -316,7 +319,7 @@ def test_build_server_raises_clear_error_without_mcp_sdk(monkeypatch):
         return real_import(name, *args, **kwargs)
 
     monkeypatch.setattr(builtins, "__import__", fake_import)
-    with pytest.raises(ImportError, match=r"scpe\[mcp\]"):
+    with pytest.raises(ImportError, match=r"scpe-protocol\[mcp\]"):
         mcp_server.build_server()
 
 

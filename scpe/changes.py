@@ -20,14 +20,36 @@ _LINE_DEF = re.compile(r"^[+-]\s*(?:pub\s+|async\s+|export\s+|default\s+)*"
                        r"(?:def|class|fn|func|function)\s+([A-Za-z_][\w]*)", re.M)
 
 
-def _counts(diff: str) -> tuple[int, int]:
+def count_diff_lines(diff: str) -> tuple[int, int]:
+    """Added/removed source lines in a unified diff.
+
+    Counts only INSIDE hunks. The obvious shortcut — skip anything starting with
+    '+++'/'---' — miscounts real edits: adding a line whose own content starts with
+    '++' produces '+++...' and would be silently dropped as if it were a file header.
+    Tracking hunk state is the only way to tell a header from content that looks like
+    one, because inside a hunk every line is prefixed and a header cannot appear.
+
+    Single source of truth: scpe.inspect imports this rather than keeping its own copy.
+    """
     added = removed = 0
+    in_hunk = False
     for line in diff.splitlines():
-        if line.startswith("+") and not line.startswith("+++"):
+        if line.startswith("@@"):
+            in_hunk = True
+            continue
+        if not in_hunk:
+            continue                       # preamble: 'diff --git', 'index', '---'/'+++'
+        if line.startswith("diff --git "):
+            in_hunk = False                # unprefixed, so it can only start the next file
+            continue
+        if line.startswith("+"):
             added += 1
-        elif line.startswith("-") and not line.startswith("---"):
+        elif line.startswith("-"):
             removed += 1
     return added, removed
+
+
+_counts = count_diff_lines
 
 
 def _touched_symbols(diff: str) -> list[str]:

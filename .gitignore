@@ -11,6 +11,10 @@ site/.playwright-mcp/
 # internal specs/plans — never public
 docs/superpowers/
 *.dc.html
+# local-only scratch (drafts, design prompts) — never public. This rule lives HERE, in the
+# tracked .gitignore, and not only in machine-local .git/info/exclude: an exclude file is
+# not cloned, so a fresh checkout elsewhere would have no protection at all.
+_local/
 # internal PT-BR execution control files — never public (only EN deliverables ship)
 PLAN.md
 STATE.md

@@ -12,16 +12,18 @@ verifier code (impl/), this pack lives at spec/test-vectors-adversarial/ instead
 sibling, never enumerated by either harness's directory scan of spec/test-vectors/, so
 the 18-vector conformance contract needs no edit and neither frozen test is touched.
 
-These six vectors are NOT additions to the eighteen normative vectors and introduce no
+These seven vectors are NOT additions to the eighteen normative vectors and introduce no
 new protocol capability. Each one exercises a check the reference verifier already
 implements (reference/standalone/verify_envelope.py); `expected.json` records the
 status that verifier ACTUALLY returns for the exact bytes in that directory (confirmed
-by running it — see verify_all.py), not an assumed one. Two of the six surfaced
+by running it — see verify_all.py), not an assumed one. Two of the seven surfaced
 genuinely surprising behavior; see README.md.
 
 Reuses ../test-vectors/make_vectors.py's manifest builder, `sign()` helper, and the
-same throwaway key committed at ../test-vectors/_key/ — not a second key, not a copy
-of that logic. Stdlib only. External binary: ssh-keygen (OpenSSH >= 8.2).
+same throwaway key at ../test-vectors/_key/ — not a second key, not a copy of that
+logic. That key is gitignored, never committed: private keys stay out of the repo even
+when they are throwaway, so a fresh clone must run make_vectors.py before regenerating
+here. Stdlib only. External binary: ssh-keygen (OpenSSH >= 8.2).
 """
 from __future__ import annotations
 
