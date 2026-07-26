@@ -21,18 +21,21 @@
 
 An open protocol that lets a repository owner verify — with no SCPE server and no new
 accounts — *who* made a pull request and that *nothing was tampered with*, then turn on a
-policy that only merges contributions they can verify. There is no SCPE server, ever: the
-default forge path makes exactly one HTTPS GET, to the contributor's git host, for keys it
-already publishes — and even that is avoidable by supplying a local keys file, for
-verification with zero network calls.
+policy that only merges contributions they can verify. There is no SCPE server, ever: reaching
+the contributor's git host is one HTTPS GET, for keys it already publishes — and it is the
+*last* of three key anchors, after a keys file the owner supplies and one bundled inside the
+submission, both of which verify with zero network calls. The verifier reports which anchor
+answered as `key_source`; a policy that needs a real forge account requires
+`key_source == "forge"`.
 
 When a PR arrives from someone you don't know — a person, or increasingly an AI agent — trust
 today rests on a GitHub username, the platform, and reading the diff by eye. SCPE adds a
 cryptographic answer to two questions the platform doesn't: **who really produced this change**,
 and **is the diff exactly what they signed** — carrying a signed AI-use disclosure (and,
 optionally, a machine-attribution record) alongside. The owner re-derives everything with
-`ssh-keygen`, `git`, and the public keys the contributor's git host already publishes. There is
-no SCPE server, so there is nothing to trust and nothing to shut down.
+`ssh-keygen`, `git`, and a key set — the public keys the contributor's git host already
+publishes, or a keys file, with `key_source` naming which one answered. There is no SCPE
+server, so there is nothing to trust and nothing to shut down.
 
 **SCPE standardizes evidence, not content.** It never says an artifact is good, true, or safe —
 it standardizes how verifiable evidence (who produced it, that it's untampered, and any signed
@@ -53,9 +56,11 @@ shared by every domain. Each *SCPE Specification* adds only its domain's convent
 | **SCPE-D** | Documents | the file's bytes | `.pdf` |
 | **SCPE-AR** | Any artifact | the file's bytes | any file |
 
-Identity is a `(provider, subject)` pair resolved from a fixed host table (`github`, `gitlab`,
-`codeberg`) or an offline keys file — the manifest never carries a hostname, so a contribution
-can't steer the verifier at an attacker's host.
+Identity is a `(provider, subject)` pair checked against keys from a fixed host table (`github`,
+`gitlab`, `codeberg`) or from a keys file — one the verifier's owner supplied, or one bundled
+inside the submission. The manifest never carries a hostname, so a contribution can't steer the
+verifier at an attacker's host; it *can* enclose its own keys, which is why the verifier reports
+the anchor that answered as `key_source`.
 
 **Open, and meant to stay that way.** SCPE is — and will always be — open source: the
 specification and every reference implementation are free to read, implement, and fork. The
@@ -96,23 +101,35 @@ SLSA uses to sell levels. See [docs/LEVELS.md](docs/LEVELS.md).
    (`ssh-keygen -Y sign -n scpe/0.1`). No new account.
 2. It travels inside a **normal pull request** — the diff in the branch, the ~1–2 KB signed
    attestation embedded in the PR body. Merging leaves the repo history clean.
-3. The **owner's side** — a GitHub Action, or a single-file verifier auditable in ten minutes —
-   re-derives everything itself, with no SCPE server involved: the signature is checked against
-   `github.com/<login>.keys` (one HTTPS GET to keys the contributor's host already publishes —
-   or, with a supplied keys file, no network call at all), the diff's SHA-256 is recomputed from
-   the PR and compared, and a seal is posted (or, in require mode, an unverifiable PR is
-   rejected).
+3. The **owner's side** re-derives everything itself, with no SCPE server involved: the diff's
+   SHA-256 is recomputed from the PR and compared, and a seal is posted (or, in require mode, an
+   unverifiable PR is rejected). The two verifiers differ in exactly one place — where the keys
+   come from:
+   - The **GitHub Action** always fetches `github.com/<login>.keys` live and accepts no
+     substitute. A contribution cannot supply the keys that judge it, so a passing check on a
+     `github` identity always means the forge published that key.
+   - The **single-file verifier**, auditable in ten minutes, is the general tool: it resolves a
+     keys file you pass it first, then any `keys` file bundled in the input, and only if neither
+     answers, one HTTPS GET to the contributor's host. It reports which one answered as
+     `key_source`, so an offline conformance run is never mistaken for a forge check.
 
 ## What `verified` proves — and what it doesn't
 
-A `verified` result means exactly: *a key published on this GitHub account signed exactly this
-change and this disclosure, and the diff you're looking at matches, byte-for-byte after
-normalizing line endings, what they signed.* Nothing more.
+**What a `verified` result means depends on where the verifier got the keys** — which it reports
+as `key_source`. At `forge` it means exactly: *a key the contributor's git host publishes for
+this account signed exactly this change and this disclosure, and the diff you're looking at
+matches, byte-for-byte after normalizing line endings, what they signed.* At `flag` it means the
+same, with the verifier owner's own key set standing in for the host. At `bundled` — keys
+carried inside the submission, chosen by whoever sent it — it means only that these exact bytes
+were signed by a key that arrived with them, and nothing about the named account. **A consumer
+that needs forge-backed identity MUST require `key_source == "forge"`**, or supply the key set
+itself and require `"flag"`.
 
-It does **not** prove the code is safe or good (SCPE is not review), that the disclosure is
-honest (a signature proves *who claimed*, not that the claim is true), or anything if the GitHub
-account or key is compromised (that's the trust root). Read
-[spec/THREAT_MODEL.md](spec/THREAT_MODEL.md) before relying on it — it states the limits plainly.
+Under every anchor it does **not** prove the code is safe or good (SCPE is not review), that the
+disclosure is honest (a signature proves *who claimed*, not that the claim is true), or anything
+if the key set that answered is compromised or attacker-chosen — that key set is the trust root.
+Read [spec/THREAT_MODEL.md](spec/THREAT_MODEL.md) before relying on it: §2.1 lays out the three
+anchors and what a verdict is worth under each.
 
 ## For maintainers — turn it on
 
@@ -136,11 +153,21 @@ a seal means:
 
 ```bash
 python reference/standalone/verify_envelope.py <envelope.zip> --keys <login.keys>
-# → [OK] verified   (or a precise reject status: tampered, signature-invalid, …)
+# → [OK] verified (attestations: none) [keys: flag]
+#   (or a precise reject status: tampered, signature-invalid, …)
 ```
 
-The 18 normative [test vectors](spec/test-vectors) are the conformance contract: any
-implementation that produces their expected statuses conforms to the spec.
+`[keys: …]` names the anchor that answered — `flag` here, because `--keys` supplied the key set.
+Without that flag, a `keys` file sitting beside `manifest.json` in the input answers as
+`bundled`, and only if neither is present does the verifier fetch from the contributor's host as
+`forge`.
+
+The 18 normative [test vectors](spec/test-vectors) are the conformance contract for **status**:
+an implementation that produces their expected statuses conforms to the spec's status behaviour.
+They don't pin every normative requirement — no vector carries an expected `key_source`, so
+passing all eighteen does not by itself show that the `key_source` MUST is honoured; that one is
+checked by inspection. Every vector ships its own `keys` file so the suite runs offline, and no
+vector reaches the `forge` anchor.
 
 **Cost** — measured on the Python reference (Ryzen 5 5600H, Python 3.14, `local` provider):
 
@@ -170,12 +197,15 @@ single machine — not a formal benchmark suite.
 ## Status
 
 **v0.1 — early.** This is a specification plus a reference implementation (a single-file
-verifier, a producer, and a maintainer-side Action) with **441 passing tests**, including a
-100-PR stress proof and a local end-to-end — plus two more independent verifiers, in Go and
-Rust, that reach the same verdict as the Python reference on every one of the 18 normative
-vectors — and a differential test that runs mutated manifests through all three and confirms
-they never disagree. There is **no external adoption yet**. It is not a hosted service and
-never will be.
+verifier, a producer, and a maintainer-side Action). The full test suite — including a 100-PR
+stress proof and a local end-to-end — runs on every push; the CI badge above is its live
+result. Two more independent verifiers, in Go and Rust, reach the same verdict as the Python
+reference on every one of the 18 normative vectors, and a differential test runs mutated
+manifests through all three and confirms they never disagree. That three-way agreement covers
+the path those vectors exercise — a directory input checked offline against a supplied keys
+file, the `flag` anchor; no vector exercises the network fetch. The Rust port goes no further: it has no network key fetch (`--keys` is required) and
+does not parse the zip-envelope or in-PR-body attestation input shapes that Python and Go both
+accept. There is **no external adoption yet**. It is not a hosted service and never will be.
 
 ## Docs
 

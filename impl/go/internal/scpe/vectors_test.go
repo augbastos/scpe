@@ -29,11 +29,15 @@ type expectedResult struct {
 	Attestations []AttEntry `json:"attestations,omitempty"`
 }
 
-// TestAllVectors is the conformance gate: SPEC.md's Appendix A says an
-// implementation that produces the expected status for all eighteen
-// normative vectors under spec/test-vectors/ conforms to §8. Each vector's
-// `keys` file substitutes for the network fetch of §8 step 4, exactly as the
-// test-vectors README requires (passed here via --keys-equivalent Options).
+// TestAllVectors is the status conformance gate: SPEC.md's Appendix A says an
+// implementation that produces the expected status for all eighteen normative
+// vectors under spec/test-vectors/ conforms to §8's *status* behaviour. It is
+// not the whole of §8 -- no vector carries an expected key_source, so a green
+// run here does not by itself show that step 4's key_source MUST is honoured.
+// Each vector's `keys` file substitutes for the network fetch of §8 step 4,
+// exactly as the test-vectors README requires (passed here via
+// --keys-equivalent Options, so these runs resolve at the `flag` anchor and
+// never reach `forge`).
 func TestAllVectors(t *testing.T) {
 	root := testVectorsDir(t)
 	entries, err := os.ReadDir(root)

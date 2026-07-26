@@ -144,6 +144,26 @@ this design exists to close.
 
 ### Step 4. Fetch or read the keys (SPEC §8 step 4)
 
+**First: keys reach you through three anchors, in a fixed precedence order.** Get this
+order right before you write the fetch, because it decides what your `verified` is worth:
+
+| Order | `key_source` | Anchor | Chosen by |
+|---|---|---|---|
+| 1 | `flag` | keys your owner supplied out of band (`--keys FILE`) | the verifier's owner |
+| 2 | `bundled` | a `keys` file inside the input, beside `manifest.json` | whoever **submitted** the input |
+| 3 | `forge` | `https://<fixed-host>/<subject>.keys` | the provider account |
+
+You **MUST** surface which one answered as a top-level `key_source` field in your
+machine-readable output (`"flag"`, `"bundled"`, `"forge"`, or `null` when no key set was
+obtained), and show it in human-readable output whenever it is set. This is normative —
+an implementation that returns the right status for all eighteen vectors but never
+reports `key_source` does not conform to §8 step 4. It changes no verdict; it exists
+because the verdict word alone cannot distinguish "the forge publishes this key for this
+user" from "the submitter enclosed a key matching its own signature" (THREAT_MODEL §2.1).
+
+The `forge` anchor is the **last** one tried, not the default. Everything below applies
+when you actually reach it.
+
 For `github` / `gitlab` / `codeberg`: fetch `https://<host>/<subject>.keys` with
 every one of these properties — each is normative, not a nice-to-have:
 
@@ -176,7 +196,12 @@ If you're running the conformance vectors (§9), note that every vector ships it
 own `keys` file precisely so your harness can substitute it for the network fetch
 in this step — you should design your verifier to accept an override (a `--keys`
 flag or equivalent) from day one, not bolt it on later. Real forge fetches and
-vector conformance use the *same* code path with a different key source.
+vector conformance run the same signature check on a different key set — but they are
+*not* the same claim, and that difference is exactly what you must report. A harness
+passing `--keys` runs at `flag`; a verifier simply pointed at the vector directory reads
+the file beside the manifest and runs at `bundled`. Neither reaches `forge`, so neither
+proves anything about an account on `github.com`. Do not let the key set become an
+invisible implementation detail: carry the anchor out to the caller as `key_source`.
 
 ### Step 5. Build the allowed-signers file (SPEC §8 step 5)
 
@@ -232,8 +257,11 @@ mismatch all reduce to — one status, several causes.)
 
 **Everything before this point can be attacker-influenced with zero cost** — the
 input, the claimed provider, the claimed subject, the manifest's contents. This is
-the first point where you have cryptographic proof that whoever holds a key
-published for `(provider, subject)` produced these exact bytes. Nothing you read
+the first point where you have cryptographic proof that whoever holds a key **from the
+set that answered in Step 4** produced these exact bytes. Note the qualifier: that is
+proof of a key published for `(provider, subject)` only when `key_source` is `forge`. At
+`bundled` the key set came from the same party as the manifest, so this line proves the
+signing act and nothing about the declared account (THREAT_MODEL §2.1). Nothing you read
 out of the manifest before this line should be treated as trustworthy for anything
 beyond deciding *how to check the signature itself* (which provider table entry to
 use, which subject to verify against). After this line, the manifest's fields are
@@ -338,17 +366,28 @@ Eight statuses total, verification stops at the first one reached (SPEC §8):
 | `tampered` | Step 7 | Recomputed hash doesn't match the signed anchor (or no payload to check). |
 | `verified` | Step 8 | Every check above passed. Carries the attestations summary + surfaced profile. |
 
+Alongside the status, report `key_source` — `"flag"`, `"bundled"`, `"forge"`, or `null`
+(Step 4). It is set whenever a non-empty key set was obtained, so on `verified` and on
+every failure reached after Step 4, and `null` for every status reached before it. It is
+not a status and never changes one; it tells the caller what the status is worth.
+
 A verifier's exit code / boolean success should be `true` **iff** the status is
 exactly `verified` — every other status is a form of "no", even the harmless-looking
 `unattested`.
 
-## 9. Run the 18 conformance vectors to prove you match
+## 9. Run the 18 conformance vectors to prove your statuses match
 
 You do not get to declare conformance by reading SPEC §8 carefully — you prove it
 by running your verifier against
-[`../spec/test-vectors/`](../spec/test-vectors/), which is normative (SPEC Appendix
-A): **an implementation that produces the expected status for all eighteen
-conforms to §8.**
+[`../spec/test-vectors/`](../spec/test-vectors/), which is normative for **status**
+(SPEC Appendix A): **an implementation that produces the expected status for all
+eighteen conforms to §8's status behaviour.**
+
+That is a real bar, and it is not all of §8. No vector carries an expected
+`key_source`, so passing all eighteen does not by itself show that step 4's
+`key_source` MUST is honoured — in the words of Step 4 above, a verifier that returns
+the right status for all eighteen vectors but never reports `key_source` still does not
+conform to §8 step 4. The suite can't catch that one; check it by inspection.
 
 Each vector is a directory with:
 
@@ -395,7 +434,8 @@ The eighteen vectors, and what each one is actually checking:
 | `tampered-artifact` | An `artifact` subject, bytes don't match the digest → `tampered`. |
 | `multi-attestation` | Two entries: one known `agent-trace` (`present-generic/1`) and one reserved `timestamp` (`present-unverified`) in the same manifest — proves entries are judged independently. |
 
-If your verifier passes all eighteen, you match §8. If it fails one, the vector
+If your verifier passes all eighteen, its status behaviour matches §8 (see above for
+what the suite still leaves to inspection). If it fails one, the vector
 name tells you which step to re-read — that's why they're organized this way
 rather than as one opaque batch. A useful sequencing if you're building
 incrementally: get `valid-minimal` green first (that alone forces you through

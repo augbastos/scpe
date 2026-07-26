@@ -20,8 +20,11 @@ survive the contribution path SCPE targets: fork PRs are routinely rebased,
 squashed, or edited on merge, producing new, unsigned objects; and a commit
 signature covers the commit — not the *contribution as a unit*: diff + base +
 AI disclosure + attribution record. SCPE signs exactly that unit, travels with the
-PR rather than the objects, and verifies against the contributor's published keys
-without requiring the maintainer to trust GitHub's badge UI.
+PR rather than the objects, and — when the verifier resolves keys at the `forge` anchor
+(SPEC §8 step 4) — verifies against the contributor's published keys without requiring
+the maintainer to trust GitHub's badge UI. A maintainer who wants that property instead
+of the weaker offline one checks `key_source == "forge"`, or supplies the key set
+themselves; see THREAT_MODEL §2.1.
 
 **Why does the attestation ride in the PR body instead of git notes?**
 Because git notes don't travel with fork pull requests. Notes live in a separate
@@ -36,7 +39,9 @@ Complementary, by design. Agent Trace (and git-ai, which implements it) records
 *attribution*: which agent, model, and session produced which lines — self-reported.
 SCPE carries that record inside the signed manifest as an `agent-trace` entry in the
 `attestations[]` array (SPEC §5), converting "self-reported" into "signed and
-attributable to a real GitHub identity, tamper-evident". Attribution tells you what;
+tamper-evident" — and, at the `forge` anchor, "attributable to a real GitHub identity"
+(that last step is earned only when `key_source == "forge"`; THREAT_MODEL §2.1).
+Attribution tells you what;
 SCPE proves who made the claim and that nothing was altered. SCPE does not validate
 the record's content (see THREAT_MODEL §2).
 
@@ -72,14 +77,17 @@ boundary instead of a mailing list, and standardizes on SSH signing against
 `github.com/<login>.keys` instead of patatt's PGP/SSH duality. Honestly: self-signing
 (Level 2 of the tiered model — see [../docs/LEVELS.md](../docs/LEVELS.md)) proves the
 change wasn't tampered with and makes the disclosure non-repudiable; it does not prove
-anything about "who" beyond what the GitHub account itself already asserts
-(THREAT_MODEL §2, §4). A stronger identity claim — verified by someone other than the
+anything about "who" beyond what the GitHub account itself already asserts — and it gets
+that far only when the verifier resolved keys at the `forge` anchor (THREAT_MODEL §2,
+§2.1, §4). A stronger identity claim — verified by someone other than the
 author — is Level 3 (third-party countersignature), which is on the roadmap and not
 implemented in `scpe/0.1`.
 
 **Why is there no server?**
 Because the entire point is that the owner re-verifies everything with their own
-tooling: `ssh-keygen`, `git`, and GitHub's public key endpoint. A verification
+tooling: `ssh-keygen`, `git`, and either a keys file they hold or GitHub's public key
+endpoint (SPEC §8 step 4 — the endpoint is consulted only when the owner supplied no
+keys and the input carried none). A verification
 service would just move the trust to whoever runs it. There is nothing to run, so
 there is nothing to trust — and nothing to shut down.
 
@@ -101,10 +109,16 @@ maintainer didn't have to take on faith. As agent-authored PRs grow, "verified
 origin" is the difference between a PR that gets read and one that gets closed.
 
 **What does `verified` actually promise?**
-Exactly this: *a key published on this GitHub account signed exactly this change
-and this provenance statement, and the change you're looking at is byte-identical
-to what was signed, after normalizing line endings.* Nothing else. See
-THREAT_MODEL §2 before relying on it.
+It depends on where the verifier got the keys, and the verifier tells you in the
+`key_source` field. At `key_source == "forge"`, exactly this: *a key published on this
+GitHub account signed exactly this change and this provenance statement, and the change
+you're looking at is byte-identical to what was signed, after normalizing line endings.*
+Nothing else. At `flag` the same, with your own keys file standing in for the account. At
+`bundled` it is weaker: *a key that travelled inside this submission signed exactly these
+bytes* — nothing about any GitHub account, because the submitter chose that key file.
+That anchor is what makes offline conformance and air-gapped review possible; it is not
+identity evidence. If your decision depends on the account being real, require
+`key_source == "forge"`. See THREAT_MODEL §2 and §2.1 before relying on any of it.
 
 ---
 
@@ -137,7 +151,11 @@ the media domains as future profiles, not a fight it's picking. Full comparison:
 SCPE is deliberately *shaped like* a JWT (one small signed set of typed claims) but avoids a
 literal one: JWT names its own algorithm in the token (the `alg:none` and RS256↔HS256 footguns)
 and still needs identity out-of-band (JWKS/issuer). SCPE fixes the method to the SSHSIG namespace
-`scpe/0.1` (SPEC §7) and resolves identity from the forge's `.keys` endpoint (SPEC §8).
+`scpe/0.1` (SPEC §7) and resolves identity from the forge's `.keys` endpoint (SPEC §8) —
+with the honest caveat that a verifier can also be handed keys, by its owner or inside the
+input, and then reports which anchor answered as `key_source` rather than pretending the
+forge was consulted (THREAT_MODEL §2.1). At the `bundled` anchor the key material arrives
+alongside the claim, which is structurally the position JWT is criticised for here.
 
 **Why not OIDC?**
 OIDC proves "a live session authenticated to an IdP" — ambient, online, and about a session, not
@@ -147,9 +165,10 @@ it today returns `unsupported-provider`, never a silent pass (SPEC §11.1).
 
 **Why not X.509?**
 X.509 buys a CA hierarchy, chains, and revocation — power SCPE's trust model doesn't use, paid for
-in ASN.1 parsing surface the single-file verifier avoids. SCPE's root of trust is "whatever key the
-forge publishes for this username" (THREAT_MODEL §2, §4), not a CA; "revocation" is simply the key
-leaving the account. Reserved as the `x509` provider for real enterprise demand (SPEC §11.1).
+in ASN.1 parsing surface the single-file verifier avoids. SCPE's root of trust is whichever key set
+answered — at best "whatever key the forge publishes for this username", at worst a file the
+submitter enclosed (THREAT_MODEL §2.1, §4) — never a CA; and "revocation" is simply the key leaving
+the account, which only reaches verifiers that actually fetch (THREAT_MODEL §8). Reserved as the `x509` provider for real enterprise demand (SPEC §11.1).
 
 **Why not blockchain?**
 The claim is already tamper-evident from its SSHSIG signature (SPEC §7) — a ledger only publishes

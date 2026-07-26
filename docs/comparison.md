@@ -24,10 +24,14 @@ what a platform already publishes is the Sigstore insight with the CA taken out;
 the claim to a hash of the artifact is what C2PA and in-toto's `subject.digest` already do.
 What SCPE contributes is the **combination, packaged as one portable format**:
 deterministic offline verification of a contribution's provenance, where the subject's
-*identity* is separated from the envelope and resolved through fixed external trust roots
-— the verifier's own provider→host table pointing at the SSH keys a forge already
-publishes (or a `local` keys file) — rather than a CA, trust list, transparency log, or
-identity service; applied at the pull-request boundary, which none of the cryptographic
+*identity* can be resolved through fixed external trust roots — the verifier's own
+provider→host table pointing at the SSH keys a forge already publishes, or a keys file the
+verifier's owner holds — rather than a CA, trust list, transparency log, or identity
+service. ("Can be" is doing real work: keys may also arrive inside the input, which is what
+makes fully offline conformance possible and is not identity evidence; the verifier reports
+which anchor answered as `key_source`, and a consumer wanting the forge-backed claim
+requires `"forge"` — SPEC §8 step 4, THREAT_MODEL §2.1.) Applied at the pull-request
+boundary, which none of the cryptographic
 protocols below serve (the DCO operates there, but checks the presence of a trailer, not a
 signature); and generalized by the same subject-by-hash core to any artifact. Most cells
 SCPE fills in the matrix below are filled by someone else too; no other row fills all
@@ -39,7 +43,9 @@ verification service; **No CA / no identity service** — the trust root is not 
 certificate authority, trust list, or identity provider; **Arbitrary artifact** — can
 attest any hash-addressable artifact, not one fixed domain; **PR-native** — designed to
 ride a forge pull request; **Provider-bound identity** — the signer's identity is an
-existing forge account, resolved from keys the platform already publishes.
+existing forge account, resolved from keys the platform already publishes (SCPE's "yes"
+means the protocol defines this resolution and a verifier reaches it at the `forge`
+anchor — see note ⁸).
 
 | | Offline verify | No CA / no identity service | Arbitrary artifact | PR-native | Provider-bound identity |
 |---|---|---|---|---|---|
@@ -49,7 +55,7 @@ existing forge account, resolved from keys the platform already publishes.
 | **Sigstore** | no⁴ | no | yes | no | partial⁴ |
 | **in-toto** | partial³ | yes | yes | no | no |
 | **C2PA** | partial⁵ | no | partial | no | no |
-| **SCPE** | yes⁶ | yes | yes⁷ | yes | yes |
+| **SCPE** | yes⁶ | yes | yes⁷ | yes | yes⁸ |
 
 *This matrix compares protocol **shape and tradeoffs**, not quality — a "no" is almost
 always a deliberate design decision, and several of these protocols are better than SCPE
@@ -67,20 +73,29 @@ forge accounts — but is resolved through CA-issued certificates, not keys the 
 publishes.
 ⁵ The embedded manifest travels inside the file, but validation runs against the C2PA
 Trust List with OCSP revocation — online PKI components.
-⁶ Forge providers need one HTTPS GET to the already-published `.keys` endpoint at verify
-time; the `local` provider needs no network at all.
+⁶ Verification needs no service of SCPE's own. A forge provider needs one HTTPS GET to the
+already-published `.keys` endpoint — but only when it actually reaches that anchor: with
+owner-supplied or input-carried keys present, no network call happens at all, and the
+`local` provider never fetches (SPEC §8 step 4).
 ⁷ Via the `artifact` subject (SPEC §6.2), standalone-envelope-only today —
 artifact-verification-in-PR is a roadmap item.
+⁸ Earned at `key_source == "forge"`, where the keys come from the account itself. A
+verifier can also resolve at `flag` (the owner's keys file) or `bundled` (a keys file
+carried inside the input) and return the same verdict word — at `bundled` the row's own
+criterion is not met, because the submitter chose the key set. The field is how a consumer
+tells the cases apart (THREAT_MODEL §2.1).
 
 Where SCPE's row reads "yes" against another's "no", read it as a **different tradeoff,
 not a win**. Going offline-first with no CA means giving up exactly what Sigstore's
 infrastructure buys: Rekor's proof-of-existence-at-time-T (SCPE's signed `created_at` is a
 claim, not a proof), OIDC-grade identity (SCPE Level 2 proves only what a forge account
-asserts), and revocation machinery. SCPE's key model is fetch-time: the verifier checks
-the keys the provider publishes *at verify time*, so removing a compromised key from a
-forge profile stops all future verification against it — but it is not retroactive, a
-verifier cannot tell rotation from compromise (the key is simply gone), and there is no
-revocation record or transparency log to consult. That is a documented limitation of the
+asserts), and revocation machinery. SCPE's key model is fetch-time *at the `forge` anchor*:
+a verifier that reaches the endpoint checks the keys the provider publishes at verify time,
+so removing a compromised key from a forge profile stops that verifier from accepting it
+again — but it is not retroactive, a verifier cannot tell rotation from compromise (the key
+is simply gone), there is no revocation record or transparency log to consult, and it does
+not reach runs that resolved against a supplied or input-carried keys file at all (those
+never fetch, so removal changes nothing for them). That is a documented limitation of the
 design, not an oversight (see `spec/THREAT_MODEL.md` §8 "Key lifecycle and revocation"
 and `spec/FAQ.md` "Why not X.509?"). And in every row, an attestation proves **who
 claimed** — never that the claim itself is true.
@@ -90,11 +105,11 @@ claimed** — never that the claim itself is true.
 | Protocol | What it is | The gap SCPE fills |
 |---|---|---|
 | **DSSE** | A signing-envelope *primitive* (`payload` / `payloadType` / `signatures` over a length-prefixed PAE) that deliberately leaves identity, key distribution, subject hashing, and policy "out of band." The signing substrate under in-toto and SLSA. | SCPE **is** that out-of-band layer, filled in for one concrete case: fixed identity resolution, per-type subject hashing, a PR-body transport, and a maintainer acceptance policy. Compatible, not rival — SCPE's audit-side attestations use DSSE where it fits. |
-| **Sigstore** | Keyless signing via an online CA (**Fulcio**, OIDC-bound short-lived certs) + a public transparency log (**Rekor**), driven by the **Cosign** client. Built for release-artifact provenance. | SCPE needs **no server, no CA, no transparency log** — it verifies against the SSH keys a forge already publishes (one HTTPS GET at verify time, or fully offline with a supplied local keys file), and signs a *contribution* at PR time, before any build. Sigstore as an opt-in signing method is on the `scpe/0.2` roadmap. |
+| **Sigstore** | Keyless signing via an online CA (**Fulcio**, OIDC-bound short-lived certs) + a public transparency log (**Rekor**), driven by the **Cosign** client. Built for release-artifact provenance. | SCPE needs **no server, no CA, no transparency log** — it verifies against the SSH keys a forge already publishes (one HTTPS GET at verify time) or, fully offline, against a supplied keys file; it reports which anchor answered as `key_source`, since only the forge one carries the account claim (THREAT_MODEL §2.1). It signs a *contribution* at PR time, before any build. Sigstore as an opt-in signing method is on the `scpe/0.2` roadmap. |
 | **patatt / b4** | End-to-end cryptographic attestation for **email patches** (kernel.org): a DKIM-style `X-Developer-Signature` header, ed25519/PGP/OpenSSH keys, an in-repo keyring, verified independently with no CA. b4 is the maintainer-side tool. | Direct prior art, not a new idea — SCPE brings the same trust shape to the **forge pull request** (where patatt explicitly does not reach) with a contribution-shaped, extensible payload (diff + AI disclosure + attribution) and an acceptance policy. |
 | **C2PA** | Content Credentials for **media assets** — provenance assertions + a signed claim (COSE/X.509, validated against a Trust List) **embedded inside** the file via byte-range/box hashing. | Media-authenticity standard; its unit is a finished asset with an embedded manifest and a PKI trust list. SCPE's unit is a stranger's **diff** in a PR body, verified before merge with no CA. SCPE names the media domains as future profiles rather than competing. |
 | **SLSA / in-toto** | Build- and supply-chain provenance: an in-toto **Statement** (`subject.digest` + `predicateType`) in a **DSSE** envelope, with SLSA's escalating build-provenance levels and the **build platform as the trusted party**. | SCPE attests a *contribution from a stranger before a build exists* — no builder to vouch for it, only the contributor's own published key. It is the layer *before* SLSA begins; SLSA's emerging Source Track is the space to watch for convergence. |
-| **Agent Trace** | Cursor's open, vendor-neutral RFC (v0.1.0) for recording per-line, per-conversation, per-model AI attribution. By its own admission: **no signatures, no identity, no verification** — purely self-reported metadata. | SCPE *carries* a full Agent Trace record verbatim as a signed attestation, bound to the exact diff and to a real forge identity — turning anonymous self-report into signed, tamper-evident, attributable self-report. Complementary by design. |
+| **Agent Trace** | Cursor's open, vendor-neutral RFC (v0.1.0) for recording per-line, per-conversation, per-model AI attribution. By its own admission: **no signatures, no identity, no verification** — purely self-reported metadata. | SCPE *carries* a full Agent Trace record verbatim as a signed attestation, bound to the exact diff and to a declared forge identity — turning anonymous self-report into signed, tamper-evident self-report, and into an *attributable* one when the verifier resolves keys at the `forge` anchor. Complementary by design. |
 | **DCO** | The Developer Certificate of Origin 1.1: a plain-text `Signed-off-by:` trailer certifying the **legal right to contribute**, enforced by a CI bot that checks the line is *present*. Not cryptographic, trivially forgeable. | SCPE proves *who* produced the change and that *nothing was tampered with*, and carries a signed AI disclosure — but makes **no legal/licensing claim at all**. Different questions; a PR can carry both a `Signed-off-by:` trailer and an SCPE seal. |
 
 ## DSSE
@@ -238,10 +253,13 @@ not evaluate whether AI contributions are good or bad — and critically it spec
 cryptographic integrity and no identity verification**, being "purely descriptive metadata,"
 entirely self-reported by the generating tool. SCPE supplies exactly that missing layer: its
 `agent-trace/1` attestation carries a **complete Agent Trace record verbatim** inside
-`manifest.json`, covered by `manifest.sig` (an SSHSIG bound to a real `(provider, subject)`
-forge identity verified against published `.keys`) and bound to the exact diff via the signed
-`subject.change.diff_sha256`, so an attacker cannot attach a fabricated trace on behalf of
-someone else or silently detach attribution from the code. Unknown formats are carried
+`manifest.json`, covered by `manifest.sig` (an SSHSIG bound to a `(provider, subject)` identity)
+and bound to the exact diff via the signed `subject.change.diff_sha256`, so the trace cannot be
+silently detached from the code. Whether an attacker can also attach a fabricated trace *on
+behalf of someone else* depends on the key anchor: at `key_source == "forge"` the signature is
+checked against the published `.keys` of the declared account and the forgery fails; at
+`bundled` the submitter supplied the key set, so a consumer that needs this property must
+require `"forge"` (SPEC §8 step 4, THREAT_MODEL §2.1). Unknown formats are carried
 fail-safe (`present-unverified`, never a silent pass), and the record becomes part of a
 maintainer-facing `verified` verdict with Levels. Honest boundary: SCPE **signs the claim; it
 does not validate the claim's content** — a contributor can sign a fabricated trace, so SCPE
@@ -262,8 +280,10 @@ they understand the contribution and its record are public and kept indefinitely
 a text declaration — not cryptographically signed** — and its enforcement is a **DCO bot / CI
 check** that verifies each commit *contains* a `Signed-off-by:` trailer, checking the presence
 of a line, not the identity of the signer. SCPE fills the cryptographic gap: its `manifest.sig`
-is an SSHSIG verified against the keys the contributor's forge **already publishes**, so
-impersonation and after-the-fact edits both fail; it binds the normalized diff via
+is an SSHSIG, so after-the-fact edits always fail; impersonation fails too when the verifier
+resolves keys at the `forge` anchor and checks them against the ones the contributor's forge
+**already publishes** — a check a consumer opts into by requiring `key_source == "forge"`, since
+a submission may otherwise carry its own key set (THREAT_MODEL §2.1). It binds the normalized diff via
 `subject.change.diff_sha256` so mid-flight tampering is caught (the DCO makes no integrity claim
 — edit the diff after sign-off and the trailer is unchanged); it carries a signed `ai_disclosure`
 (`none` / `assisted` / `generated`) plus optional machine-attribution `attestations[]` (the DCO

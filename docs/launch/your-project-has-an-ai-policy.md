@@ -41,10 +41,14 @@ Enforcing *presence* is useful, but a disclosure is still just a claim. A contri
 
 - **Level 1 — Disclosure.** The declaration is present. Zero friction.
 - **Level 2 — Signed.** The contribution rides inside a signed envelope: the change is bound to
-  a verifiable GitHub identity (an SSH key the account already publishes) and to a SHA-256 of
-  the exact diff, so the maintainer can prove *who* produced it and that *nothing was tampered
-  with* — offline, with no server. The disclosure becomes non-repudiable: signed, you can't
-  later deny you made it.
+  a claimed GitHub identity and to a SHA-256 of the exact diff, so the maintainer can prove
+  *nothing was tampered with* — with no server. The *who* half needs one more word. Binding the
+  signature to an SSH key **the account already publishes** requires the verifier to actually
+  consult `github.com/<login>.keys`; it can instead check a key file it was handed, or one that
+  came inside the submission, which is what makes fully offline verification possible. The
+  verifier says which it did (`key_source`), and a maintainer who wants the identity claim
+  requires `forge`. The GitHub Action does that fetch by default. The disclosure becomes
+  non-repudiable either way: signed, you can't later deny you made it.
 - **Level 3 — Countersigned** *(on the roadmap)*. A third party — a reviewer, or the agent
   platform itself — co-signs. That's the strong claim, because a self-signature only proves what
   the account already asserts.
@@ -59,8 +63,12 @@ Be clear about the limits, because overclaiming is how trust tools lose trust.
 
 This does not judge whether the code is good — it's not review. It does not prove a disclosure
 is honest — a signature proves *who claimed*, not that the claim is true. And it proves nothing
-if the GitHub account or key is compromised; that's the root of trust, delegated to the platform
-on purpose.
+if the GitHub account or key is compromised: the platform is the root of trust, delegated on
+purpose — but only on the runs where the verifier actually consulted it (`key_source: forge`).
+On the other runs the root is whoever supplied the keys instead. A key file the maintainer
+handed the verifier is worth what that maintainer's own vetting is worth; a key file that came
+inside the submission proves the signing act and nothing about the named account. Same verdict
+word, different root — which is why the verifier reports which one it used.
 
 None of this is a new invention, either. `patatt` and `b4` have run almost exactly this pattern
 — self-sign a contribution with a key the platform publishes, verify it independently, no

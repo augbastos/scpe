@@ -1,7 +1,9 @@
 # SCPE Roadmap — designed, deliberately deferred
 
 `scpe/0.1` is intentionally small: a subject identified by a digest, verifiable evidence about
-it, and a signature — verified offline against keys the platform already publishes. Everything
+it, and a signature — verified offline against a key set from one of three anchors, at best the
+keys the platform already publishes, with the verifier reporting which one answered as
+`key_source` (SPEC §8 step 4, THREAT_MODEL §2.1). Everything
 below is a **designed extension point**, not a missing feature. Each is deferred on purpose,
 because the guiding principle for a young protocol is:
 
@@ -92,7 +94,8 @@ high-assurance segment — a hypothesis to validate, not yet a validated demand.
 **Today:** the assurance ladder ships L1 (disclosure lint) and L2 (author-signed envelope).
 
 **Direction:** author self-signing proves integrity and makes the disclosure non-repudiable,
-but proves little about *who* beyond what the GitHub account already asserts. The strong
+but proves little about *who* — at best only what the GitHub account already asserts, and that
+much only when the verifier resolved keys at the `forge` anchor (THREAT_MODEL §2.1). The strong
 identity claim is a **third party** co-signing — a reviewer, or the agent platform attesting
 "this came from session X of agent Y" (the in-toto model: the builder attests, not the author).
 This is the real long-term moat. `countersignature` is a **reserved attestation type** (SPEC

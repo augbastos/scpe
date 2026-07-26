@@ -1,9 +1,12 @@
-//! Conformance gate for the Rust SCPE verifier: SPEC.md's Appendix A says an
-//! implementation that produces the expected status for all eighteen
-//! normative vectors under spec/test-vectors/ conforms to §8. This mirrors
+//! Status conformance gate for the Rust SCPE verifier: SPEC.md's Appendix A
+//! says an implementation that produces the expected status for all eighteen
+//! normative vectors under spec/test-vectors/ conforms to §8's *status*
+//! behaviour. That is not all of §8 — no vector carries an expected
+//! `key_source`, so a green run here does not by itself show that step 4's
+//! `key_source` MUST is honoured. This mirrors
 //! impl/go/internal/scpe/vectors_test.go — each vector's `keys` file
 //! substitutes for the network fetch of §8 step 4, exactly as the
-//! test-vectors README requires.
+//! test-vectors README requires, so these runs never reach the `forge` anchor.
 
 use serde_json::Value;
 use std::fs;

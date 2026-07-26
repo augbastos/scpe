@@ -18,9 +18,9 @@ keep exercising that property, not to invent a new one.
   governs, the reference verifier (`reference/standalone/verify_envelope.py`) implements it, and
   the vectors are the executable contract between them. If an implementation and SPEC.md disagree,
   SPEC.md wins and the implementation is a bug.
-- Until the repository is public, changes land by the author's own review against this document —
-  there is no outside maintainer team yet. That will change; §4 describes the process that takes
-  over once it does.
+- The repository is public, but there is no outside maintainer team yet: changes land by the
+  author's own review against this document. That will change once there are outside implementers;
+  §4 describes the process that takes over then.
 - CC BY 4.0 covers the spec text itself (`spec/`); this means anyone can fork, adapt, or propose
   changes to the *document* without asking permission. It says nothing about who controls the
   `scpe/<MAJOR>.<MINOR>` name and registries below — that governance is what this document defines.
@@ -117,10 +117,15 @@ a single normative document, an executable test contract):
    alone implement.
 3. **Vectors before merge.** Per SPEC Appendix A, the test vectors under `spec/test-vectors/` are
    normative, not illustrative — "an implementation that produces the expected status for all
-   [vectors] conforms to §8." An "implement" step (§2 above) is not accepted without new vectors
+   eighteen conforms to §8's status behaviour." Read that scope literally: the suite is normative
+   for *status*, not for every requirement in §8. Appendix A records that no vector carries an
+   expected `key_source`, so a green suite is the floor a proposal has to clear, not a full
+   conformance proof. An "implement" step (§2 above) is not accepted without new vectors
    demonstrating both the new success path and that the fail-safe default still holds for verifiers
-   that don't know about the change yet. A "reserve"-only step needs no new vectors, since by
-   definition nothing new is being verified.
+   that don't know about the change yet — and where a proposal adds a requirement the vector format
+   cannot express (as step 4's `key_source` is today), it must say how that requirement is checked
+   instead. A "reserve"-only step needs no new vectors, since by definition nothing new is being
+   verified.
 4. **Reference implementation follows the spec, not the reverse.** SPEC.md is edited first;
    `reference/producer.py` and `reference/standalone/verify_envelope.py` are then brought into line.
    A patch that changes the reference implementation's behavior without a corresponding SPEC.md
@@ -131,11 +136,11 @@ a single normative document, an executable test contract):
    registry entries. A provider or subject-type addition that only one implementation has ever
    exercised is weaker evidence than one that a second, independently-written verifier (for example
    a non-Python one) also gets right against the same vectors.
-6. **Discussion venue.** While the repository is private, proposals are author-reviewed against
-   this document. Once public, the venue is the repository's issue tracker — GitHub Issues/
-   Discussions on whatever repo hosts SPEC.md at the time — and this section should be updated to
-   name it explicitly rather than left as a placeholder. This document does not currently claim a
-   process exists that hasn't run yet.
+6. **Discussion venue.** The repository is public, and its issue tracker is the venue: proposals
+   go to GitHub Issues or Discussions on `augbastos/scpe`, the repo that hosts SPEC.md. No
+   proposal has arrived from outside yet, so in practice every change so far has been
+   author-reviewed against this document. This section names the venue rather than describing a
+   process that has already run.
 
 ## 5. Registry section
 

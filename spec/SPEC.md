@@ -33,9 +33,11 @@ an [Agent Trace](https://github.com/cursor/agent-trace) record). Every one of th
 the subject, the disclosure, and each attestation — lives inside the one signed
 `manifest.json`, so all are signed claims attributable to the contributor. A
 verifier — typically the owner of the target repository — re-derives every claim
-offline using only `ssh-keygen`, `git`, and the public keys the contributor's
+offline using only `ssh-keygen`, `git`, and a key set: the public keys the contributor's
 provider already publishes (GitHub, GitLab, or Codeberg — the last also covering
-Gitea/Forgejo — or an owner-supplied keys file for offline and self-hosted use). No
+Gitea/Forgejo), or a keys file for offline and self-hosted use. Which anchor answered is
+reported as `key_source`, because only the provider-published one carries a claim about
+the forge account (§2.1, §8 step 4). No
 SCPE server exists, no new account is required, and no trusted third party is
 introduced. Identity is universal from day one: the provider is one enum value from
 a fixed registry (§8), not a hardcoded platform.
@@ -58,9 +60,12 @@ between signing and verification. It deliberately does **not** cover:
   or malicious code written by its genuine author.
 - **Truth of the provenance statement.** The signature proves who *made* the
   disclosure, not that the disclosure is honest (see THREAT_MODEL.md).
-- **Key or account compromise.** The root of trust is the contributor's provider
-  account and the keys it publishes (or, for the `local` provider, the keys file the
-  verifier's owner supplies).
+- **Key or account compromise, or a self-supplied key set.** The root of trust is
+  whichever anchor supplied the keys: the contributor's provider account and the keys it
+  publishes, the keys file the verifier's owner supplies, or a keys file carried inside
+  the input — the last chosen by the submitter and therefore no evidence of forge
+  identity. §8 step 4 defines the precedence and requires the verifier to report which
+  one answered.
 - **Post-merge lifecycle.** Verification is defined at review time, against the
   pull request's head. See §10 and THREAT_MODEL.md for squash/rebase implications.
 
@@ -157,7 +162,7 @@ The standalone envelope carries exactly one payload member — `diff.patch` for 
 |---|---|---|---|
 | `spec_version` | MUST | string | `"scpe/0.1"` |
 | `created_at` | MUST | string | RFC 3339 timestamp |
-| `contributor` | MUST | object | `{ "identity": { "provider": str, "subject": str }, "key_fingerprint": str }` — the forge identity whose published keys verify `manifest.sig`, and the SHA256 fingerprint of the signing key. `provider` MUST be a value from the fixed registry (§8); the identity's `subject` is the username within that provider and MUST satisfy the safe-subject rule (§8). The manifest carries **no** hostname, URL, port, or path — only the enum `provider` and the username (§8, SSRF invariant). |
+| `contributor` | MUST | object | `{ "identity": { "provider": str, "subject": str }, "key_fingerprint": str }` — the **claimed** forge identity that `manifest.sig` is checked against, and the SHA256 fingerprint of the signing key. Whether that claim was tested against the provider's published keys depends on the anchor the verifier resolved (§8 step 4, reported as `key_source`). `provider` MUST be a value from the fixed registry (§8); the identity's `subject` is the username within that provider and MUST satisfy the safe-subject rule (§8). The manifest carries **no** hostname, URL, port, or path — only the enum `provider` and the username (§8, SSRF invariant). |
 | `subject` | MUST | object | `{ "type": str, ... }` — **what** is attested. The verifier's integrity step dispatches on `type` (§6). `scpe/0.1` implements `code-change` and `artifact` (standalone); any other type fails closed. |
 | `ai_disclosure` | MUST | object | `{ "mode": "none" \| "assisted" \| "generated", "notes": str? }` |
 | `profile` | MAY | string | a **domain-convention label** from the profile registry (§13) — one of `SCPE-C`, `SCPE-I`, `SCPE-V`, `SCPE-A`, `SCPE-M`, `SCPE-DATA`, `SCPE-D`, `SCPE-AR`. The producer stamps it; the verifier **surfaces** it verbatim but still verifies by `subject.type` (§6). Purely advisory: it carries **no** integrity path, and an unrecognized value is surfaced-but-ignored, never an error (§13). Omitted means unstamped. |
@@ -403,7 +408,11 @@ ssh-keygen -Y sign -f <private_key> -n scpe/0.1 manifest.json
 - The signing key MUST be resolvable for the declared `(provider, subject)` per §8:
   for a forge provider it MUST appear at that provider's `.keys` endpoint for
   `subject`; for `local` it MUST appear in the owner-supplied keys file. §8 defines
-  resolution and the fixed provider→host table.
+  resolution and the fixed provider→host table. This is a **producer** obligation, and
+  a verifier only enforces it when it reaches the `forge` anchor: a run that resolved at
+  `flag` or `bundled` can return `verified` without ever consulting the endpoint, so a
+  `verified` verdict is not by itself evidence that this MUST was honoured. That is what
+  `key_source` is for (§8 step 4, §2.1).
 
 ## 8. Verification algorithm
 
@@ -668,8 +677,12 @@ provenance statement, and — by construction — against verifier-side SSRF (§
 key-fetch host comes from a fixed provider→host table, never from the manifest). It
 does not defend against a compromised provider account or SSH key, a
 malicious-but-genuine author, a false disclosure, or the unavailability of the
-provider's key endpoints. The trust root is the contributor's provider account (or,
-for the `local` provider, the keys file the verifier's owner supplies).
+provider's key endpoints. The trust root is whichever anchor supplied the keys (§8
+step 4): the contributor's provider account at `forge`, the verifier owner's keys file
+at `flag`, and a keys file carried inside the input — chosen by the submitter, and
+therefore no evidence of forge identity — at `bundled`. A consumer whose decision
+depends on the identity being a real forge account MUST require `key_source == "forge"`
+(§2.1, THREAT_MODEL §2.1).
 
 Prior art: `patatt` and `b4` ([mricon/patatt](https://github.com/mricon/patatt),
 kernel.org) already sign and verify individual email patches against a
@@ -681,7 +694,9 @@ pull-request boundary instead of a mailing list. Self-signing at this level
 [../docs/LEVELS.md](../docs/LEVELS.md)) proves integrity of the change and
 non-repudiation of the disclosure; it does not prove anything about the
 contributor beyond what the provider's published keys (e.g.
-`github.com/<subject>.keys`) already assert. A materially
+`github.com/<subject>.keys`) already assert — and it reaches even that ceiling only when
+`key_source` is `forge`; a `bundled` result sits below it, asserting nothing about any
+forge account (§2.1, §8 step 4). A materially
 stronger "who" claim — verified by someone other than the author — is Level 3
 (third-party countersignature), which is roadmap, not implemented in `scpe/0.1`.
 
@@ -767,8 +782,12 @@ on `subject.type` (`code-change` and `artifact` implemented; every other type �
 `unsupported-subject`, §6.3), and reports the `attestations[]` per-entry summary
 (§5.3, unknown types → `present-unverified`).
 
-The eighteen test vectors under `/spec/test-vectors/` are normative: an
-implementation that produces the expected status for all eighteen conforms to §8.
+The eighteen test vectors under `/spec/test-vectors/` are normative for **status**: an
+implementation that produces the expected status for all eighteen conforms to §8's
+status behaviour. They do not cover every normative requirement in §8 — no vector
+carries an expected `key_source`, so passing all eighteen does not by itself show that
+step 4's `key_source` MUST is honoured. That one is checked by inspection, not by the
+suite.
 They exercise every registry provider (`valid-minimal`/`github`, `valid-gitlab`,
 `valid-codeberg`, `valid-local`), both implemented subject types (`code-change`, and
 `artifact` via `valid-artifact` + the `tampered-artifact` digest-mismatch reject), the

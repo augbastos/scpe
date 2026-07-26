@@ -1,7 +1,14 @@
 # SCPE test vectors (normative)
 
-Eighteen vectors, one directory each. An implementation conforms to SPEC §8 if it
-produces the `expected.json` status for all eighteen.
+Eighteen vectors, one directory each. An implementation conforms to SPEC §8's **status**
+behaviour if it produces the `expected.json` status for all eighteen. The suite does not
+cover every normative requirement in §8: no vector carries an expected `key_source`, so
+passing all eighteen does not by itself show that step 4's `key_source` MUST is honoured.
+Every vector runs offline against its own `keys` file — at the `flag` anchor when a
+harness passes it with `--keys`, at `bundled` when a verifier is simply pointed at the
+directory. No vector reaches `forge`, so a `valid-*` vector's `verified` is an offline
+conformance result, never a claim that any account published those keys (SPEC Appendix A,
+THREAT_MODEL §2.1).
 
 Each directory contains:
 

@@ -177,9 +177,12 @@ remains an auditable historical record. That is deliberate — see THREAT_MODEL 
 ## 5. No server
 
 **Decision.** No SCPE-operated service participates in signing or verification. A verifier
-re-derives every claim offline using only tools it already trusts: `ssh-keygen`, `git`, and the
-provider's *existing* public-key endpoint (`<host>/<subject>.keys`) — or, for `local`, a keys
-file the owner holds. No SCPE account, no SCPE API, no trusted third party (SPEC §1; FAQ).
+re-derives every claim offline using only tools it already trusts: `ssh-keygen`, `git`, and a
+key set from one of three anchors — a keys file the owner holds, a keys file carried inside the
+input, or the provider's *existing* public-key endpoint (`<host>/<subject>.keys`), in that
+precedence order (SPEC §8 step 4). No SCPE account, no SCPE API, no trusted third party
+(SPEC §1; FAQ). Which anchor answered is reported as `key_source`, because removing the server
+did not remove the trust question — it moved it to whoever supplied the keys (THREAT_MODEL §2.1).
 
 **Why.** A verification service would not remove trust — it would *relocate* it to whoever runs
 the service, creating a new trusted third party, a new availability dependency, a new attack
@@ -188,8 +191,9 @@ the owner re-derives the result themselves from public inputs. In the repo's own
 nothing to run, so there is nothing to trust — and nothing to shut down" (FAQ).
 
 **Cost accepted, stated plainly.** No central revocation, no key-transparency log, and no trusted
-timestamp in `scpe/0.1`. Those properties are either delegated to the provider's key endpoint —
-which is trust-on-first-use at fetch time, and the explicit root of trust (THREAT_MODEL §2, §4) —
+timestamp in `scpe/0.1`. Those properties are either delegated to whichever anchor answered —
+trust-on-first-use at the provider's key endpoint when the run reaches `forge`, and trust in a
+file the owner or the submitter supplied otherwise (THREAT_MODEL §2.1, §4) —
 or deferred to the roadmap: trusted timestamping (RFC 3161 / OpenTimestamps / a Rekor-style log)
 is a *reserved* `timestamp` attestation type, surfaced as `present-unverified` until implemented
 (SPEC §5.1; ROADMAP §2). This is the same trade the FAQ makes against Sigstore's keyless flow:
@@ -234,11 +238,18 @@ can sign a fabricated attestation. SCPE converts an unsigned, anonymous self-rep
 attributable self-report — that is the entire upgrade (THREAT_MODEL §2, SPEC §2: "The signature
 proves who *made* the disclosure, not that the disclosure is honest").
 
-**3. Defense against a compromised key or account.** If an attacker controls the private key behind
-`github.com/<subject>.keys` (or, for `local`, the owner's keys file), SCPE verifies whatever they
-sign, because as far as the protocol can see, that *is* the identity. There is no second factor, no
-anomaly detection, no revocation check beyond "is this key still listed." (SPEC §2, THREAT_MODEL §2,
-§4.) See [THREAT_MODEL §6 "Known limitations"](../spec/THREAT_MODEL.md) for the residual-risk framing.
+**3. Defense against a compromised key or account — or a self-supplied one.** If an attacker
+controls the private key behind `github.com/<subject>.keys` (or, for `local`, the owner's keys
+file), SCPE verifies whatever they sign, because as far as the protocol can see, that *is* the
+identity. There is no second factor, no anomaly detection, no revocation check beyond "is this key
+still listed." And the cheaper version of the same non-goal: an attacker need not compromise
+anything at all. Keys can also reach the verifier from *inside the input* — the `bundled` anchor,
+SPEC §8 step 4 — so a submission can declare any `(provider, subject)` and enclose a key matching
+its own signature, reaching `verified` with one `ssh-keygen` run and no forge contacted. That
+anchor exists so offline conformance and air-gapped review work at all; the defense is not to
+forbid it but to read the reported `key_source`, and to require `"forge"` when the decision
+depends on the account being real. (SPEC §2, §2.1, THREAT_MODEL §2, §2.1, §4.) See
+[THREAT_MODEL §6 "Known limitations"](../spec/THREAT_MODEL.md) for the residual-risk framing.
 
 **4. A guarantee that outlives the merge.** SCPE's claims are defined **at review time, against the
 pull request head** — not against whatever the repository's history looks like afterward. A squash
@@ -259,9 +270,11 @@ a third-party-attested proof that the signature existed at that time. `timestamp
 unimplemented attestation type for exactly this reason (SPEC §5.1, ROADMAP §2); until it lands, do
 not read `created_at` as forensic-grade.
 
-**7. A key-transparency or certificate-authority system.** SCPE trusts whatever keys the declared
-provider publishes *at verification time* — trust-on-first-use at the key endpoint, with no
-independent log of what a key was at some earlier point (see
+**7. A key-transparency or certificate-authority system.** When a run reaches the `forge` anchor,
+SCPE trusts whatever keys the declared provider publishes *at verification time* — trust-on-first-use
+at the key endpoint, with no independent log of what a key was at some earlier point; when it
+resolves at `flag` or `bundled` the endpoint is never consulted and the trust sits in the supplied
+file instead (THREAT_MODEL §2.1). No log stands behind any of the three (see
 [THREAT_MODEL §6 "Known limitations"](../spec/THREAT_MODEL.md)). SCPE introduces no CA, no online signing service, and
 no transparency log of its own — that absence is the point (FAQ: "Why is there no server?").
 
@@ -287,7 +300,9 @@ specific regulation.
 the change wasn't altered after signing and that the disclosure is non-repudiable. It proves
 **nothing about the contributor beyond what the provider's published keys already assert** — no
 background check, no "verified human," no reputation signal independent of the account itself
-([LEVELS.md](LEVELS.md), THREAT_MODEL §4). A materially stronger identity claim requires a second,
+([LEVELS.md](LEVELS.md), THREAT_MODEL §4). That is the *ceiling*, reached only when the verifier
+resolved keys at the `forge` anchor; a `bundled` pass sits below it and asserts nothing about the
+published keys at all (THREAT_MODEL §2.1). A materially stronger identity claim requires a second,
 independent signer (Level 3 / countersignature), which is roadmap, not shipped.
 
 **12. Universal artifact verification through every transport.** The `artifact` subject type verifies
