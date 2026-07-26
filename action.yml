@@ -1,6 +1,6 @@
 name: SCPE Seal
 description: >-
-  Verify a signed SCPE envelope on a PR and post a decision-first seal:
+  Verify a signed SCPE contribution on a PR and post a decision-first seal:
   identity, risk band, tests, provenance.
 author: Augusto Bastos
 branding:
@@ -9,9 +9,34 @@ branding:
 
 inputs:
   envelope:
-    description: Path to the scpe envelope committed on the PR.
+    description: >-
+      Path to a spec SCPE envelope zip (what `scpe-envelope pack` writes) that
+      the contributor committed on the PR. EMPTY by default, which selects the
+      spec's §9 transport instead: the attestation rides in the PR description
+      and no binary blob ever lands in history. Empty means "read the
+      attestation from the PR body", not "check nothing".
     required: false
-    default: .scpe/contribution.cc.zip
+    default: ""
+  attestation:
+    description: >-
+      Path to a text file carrying an `<!-- SCPE-ATTESTATION-v1 ... -->` block.
+      Only needed when the attestation was committed to a file instead of posted
+      in the PR description; empty (the default) reads the PR body itself. The
+      block is extracted by the reference verifier, not by this Action — one
+      parser, one answer.
+    required: false
+    default: ""
+  keys:
+    description: >-
+      Path to an OpenSSH authorized-keys file to anchor the signature against,
+      instead of fetching the contributor's public keys from their forge. This is
+      what makes an air-gapped runner and `provider: local` work. It also pins
+      `key_source` to "flag", and the seal prints that: "verified against the
+      keys this repository supplied" is a different claim from "verified against
+      the keys github.com serves for that account", and spec §8 step 4 discloses
+      the anchor precisely so the two never look alike.
+    required: false
+    default: ""
   repo:
     description: Path to the checked-out repository to verify against.
     required: false
@@ -38,22 +63,24 @@ inputs:
       checks. Only "1" and "2" are implemented; any other value (including "3")
       fails this step immediately with a clear error instead of silently
       falling back to level 2.
-        "1" — AI-disclosure lint only, zero-friction. No envelope, no signing
-        key, no `pipx install scpe` even — it runs ONLY
-        reference/disclosure.py (via reference/level1_lint.py, read straight
-        out of this action's own checkout, github.action_path) against the PR
-        body and commit messages, looking for an `Assisted-by:` trailer or a
-        checked PR-template checkbox.
-        "2" (default) — a valid signed SCPE envelope is required: the full
-        envelope/signature seal below, unchanged from before levels existed.
-        This IMPLIES level 1: an envelope's `provenance` field (the
-        AI-disclosure, signed as part of the manifest — required by
-        scpe/envelope.py, no default) can never be absent from a `verified`
-        envelope, so a level-2 pass has already re-proven what level 1's
-        free-text lint checks, via a stronger, signed mechanism instead of an
-        unsigned trailer.
+        "1" — AI-disclosure lint only, zero-friction. No attestation, no signing
+        key, no install of any kind — it runs ONLY reference/disclosure.py (via
+        reference/level1_lint.py, read straight out of this action's own
+        checkout, github.action_path) against the PR body and commit messages,
+        looking for an `Assisted-by:` trailer or a checked PR-template checkbox.
+        "2" (default) — a valid signed SCPE contribution is required: manifest,
+        SSHSIG signature and diff are checked by
+        reference/standalone/verify_envelope.py, the single-file normative
+        verifier, read out of this same checkout. This IMPLIES level 1, but at
+        the GATE, not in the verifier: spec scpe/0.1 keeps `ai_disclosure` out
+        of the eight §8 statuses, so the seal reports `disclosure_present` read
+        from the SIGNED manifest and refuses the gate when it is missing. That
+        is still strictly stronger than level 1 — the disclosure lives inside
+        the bytes the signature covers, instead of in free text a contributor
+        can edit afterwards — but it is this Action enforcing it, not the
+        protocol.
         "3" — third-party countersignature (a maintainer/reviewer co-signs the
-        envelope, independent of the author). ROADMAP — not implemented in
+        contribution, independent of the author). ROADMAP — not implemented in
         this Action or in spec scpe/0.1.
       Combines with `require` exactly like the full seal: require=false
       reports; require=true fails the check and posts
@@ -67,11 +94,17 @@ outputs:
     value: ${{ steps.seal.outputs.results }}
   status:
     description: >-
-      "unattested" (no valid envelope), "not-verified" (envelope present but
-      identity/signature check failed), or "verified". "n/a" when require=false,
-      matching today's informational-only behavior. At level=1 this instead
-      reflects disclosure presence ("verified"/"unattested") regardless of require,
-      since level 1 has no envelope to be "n/a" about.
+      One of the eight spec scpe/0.1 §8 statuses, verbatim: "unattested",
+      "unsupported-version", "unsupported-provider", "unsupported-subject",
+      "identity-unverifiable", "signature-invalid", "tampered", "verified".
+      Exactly one of them passes: "verified". The specific failure is
+      deliberately NOT collapsed into a single "not-verified" the way it was
+      before v1.0.0 — "tampered" and "identity-unverifiable" ask a maintainer
+      for completely different reactions. The status is now always emitted,
+      including when require=false, and "n/a" is gone: the status is
+      information, the gate is `gate-pass`. At level=1 it instead reflects
+      disclosure presence ("verified"/"unattested"), since level 1 has no
+      signature to have an opinion about.
     value: ${{ steps.seal.outputs.status }}
   gate-pass:
     description: >-
@@ -86,21 +119,28 @@ runs:
       shell: bash
       # Attacker-controlled PR fields (body, base/head SHAs) reach the script ONLY
       # through env, never inlined into the run: text — a hostile PR body cannot
-      # break out of a string literal and inject shell (mirrors the safe pattern in
-      # docs/workflows/scpe.yml's "Extract the signed envelope" step). REPO_DIR and
-      # REQUIRE come from trusted action inputs and ride the same env for consistency.
+      # break out of a string literal and inject shell. It does not reach argv
+      # either: `--pr-body-env PR_BODY` tells the sealer to read the VARIABLE, so
+      # the body is never a command-line argument that could show up in a process
+      # list or trip an argv length limit. REPO_DIR / REQUIRE / ENVELOPE /
+      # ATTESTATION / KEYS / RUN_TESTS come from trusted action inputs and ride the
+      # same env because the command below expands them as shell variables.
       env:
         PR_BODY: ${{ github.event.pull_request.body }}
         BASE_SHA: ${{ github.event.pull_request.base.sha }}
         HEAD_SHA: ${{ github.event.pull_request.head.sha }}
         REPO_DIR: ${{ inputs.repo }}
         REQUIRE: ${{ inputs.require }}
+        ENVELOPE: ${{ inputs.envelope }}
+        ATTESTATION: ${{ inputs.attestation }}
+        KEYS: ${{ inputs.keys }}
+        RUN_TESTS: ${{ inputs.run-tests }}
       # UNTRUSTED wrapper: deterministic risk + tests, no LLM, no secrets.
-      # Emits results.json for the trusted job to render + post.
+      # Emits results.json for the trusted job to post verbatim.
       run: |
         if [ "${{ inputs.level }}" = "1" ]; then
-          # LEVEL 1 — zero-friction AI-disclosure lint. No envelope, no signing
-          # key, and no pip/pipx install of the scpe package at all: this reads
+          # LEVEL 1 — zero-friction AI-disclosure lint. No attestation, no signing
+          # key, and no package install of any kind: this reads
           # reference/level1_lint.py straight out of the action's OWN checkout
           # (github.action_path is this repo at the tag the caller pinned),
           # which in turn only checks the PR body + commit messages already
@@ -123,62 +163,75 @@ runs:
           # third-party countersignature must get a clear failure, never a
           # false sense of assurance this Action does not provide. Level 3 is
           # roadmap only (docs/LEVELS.md); it is not implemented anywhere in
-          # this repo. No secrets, no envelope read — this check runs before
+          # this repo. No secrets, no attestation read — this check runs before
           # either.
-          echo "::error::level=${{ inputs.level }} is not supported. This Action implements level 1 (AI-disclosure lint) and level 2 (signed SCPE envelope, default). Level 3 (third-party countersignature) is on the roadmap, not implemented — see docs/LEVELS.md. Set level: 1 or level: 2." >&2
+          echo "::error::level=${{ inputs.level }} is not supported. This Action implements level 1 (AI-disclosure lint) and level 2 (signed SCPE contribution, default). Level 3 (third-party countersignature) is on the roadmap, not implemented — see docs/LEVELS.md. Set level: 1 or level: 2." >&2
           exit 1
         fi
 
-        if [ "${{ inputs.require }}" != "true" ]; then
-          # Unchanged path, byte-for-byte: today's informational seal. require=false
-          # is opt-in gating, not a behavior change to the default seal — an
-          # unattested PR still fails this step exactly as it always has.
-          pipx run --spec scpe-protocol scpe seal "${{ inputs.envelope }}" \
-            --repo "${{ inputs.repo }}" \
-            ${{ inputs.run-tests == 'true' && '--run-tests' || '' }} \
-            --json > results.json
-          echo "results=results.json" >> "$GITHUB_OUTPUT"
-          echo "status=n/a" >> "$GITHUB_OUTPUT"
-          echo "gate-pass=true" >> "$GITHUB_OUTPUT"
-          exit 0
+        # LEVEL 2 — the signed seal. Both branches that used to live here (the
+        # informational one and the gated one) collapsed into this single call:
+        # the sealer computes status/require/gate_pass itself and exits 0 even for
+        # an unattested PR, so there is nothing left for the shell to decide.
+        #
+        # `require` is normalized to a strict boolean before it becomes a flag.
+        # GitHub hands inputs through as free text ("true", "True", "yes", ""),
+        # `--require` accepts only true|false, and the middle of a merge gate is
+        # the worst possible place to discover an argument-parsing error. Anything
+        # that is not literally "true" is false, which keeps gate mode opt-in even
+        # when a caller mistypes it. Read through $REQUIRE (set in env: above) rather
+        # than interpolating ${{ }} into the script — a expression pasted into shell
+        # text is the injection shape this two-job split exists to avoid.
+        require_flag=false
+        [ "$REQUIRE" = "true" ] && require_flag=true
+
+        run_tests=""
+        if [ "$RUN_TESTS" = "true" ]; then
+          run_tests="--run-tests"
         fi
 
-        # require=true: this step MUST still succeed even when the PR is
-        # unattested or fails verification, so the artifact reaches the trusted
-        # job — this untrusted job has no write token and can only ever hand
-        # over a DECISION, never post it.
-        set +e
-        pipx run --spec scpe-protocol scpe seal "${{ inputs.envelope }}" \
-          --repo "${{ inputs.repo }}" \
-          ${{ inputs.run-tests == 'true' && '--run-tests' || '' }} \
-          --json > results.raw.json
-        code=$?
-        set -e
-        python3 - "$code" <<'PY'
-        import json
-        import sys
-        from pathlib import Path
+        # The verifier arrives through the action's OWN checkout, exactly like
+        # level 1 does — no download, no PyPI, no network at verification time.
+        # `${{ github.action_path }}` is this repository at the tag the caller
+        # pinned, so the bytes that decide the verdict are the bytes of that tag,
+        # not "whatever is on PyPI at the moment this PR happened to run". The
+        # package is stdlib-only, which is what makes running it from a bare
+        # PYTHONPATH possible at all. PYTHONPATH is REPLACED rather than appended
+        # to on purpose: a contributor-influenced PYTHONPATH must not be able to
+        # shadow `scpe` or `reference` with its own module of the same name.
+        #
+        # Input precedence, resolved inside the sealer: --envelope (a committed
+        # zip) beats --attestation (a committed text file) beats the PR body. The
+        # optional flags are omitted entirely when unset, so an unset input never
+        # degrades into "a path that is the empty string".
+        #
+        # There is no `set +e` here: `scpe seal` exits 0 whenever it produced a
+        # results.json, including for `unattested` and every other failing §8
+        # status. A non-zero exit therefore means an OPERATIONAL failure (repo
+        # missing, file unreadable) — and that must fail the step loudly instead
+        # of being laundered into a verdict of "unattested".
+        PYTHONPATH="${{ github.action_path }}" python3 -m scpe.cli seal \
+          --repo "$REPO_DIR" \
+          --base "$BASE_SHA" \
+          --head "$HEAD_SHA" \
+          --pr-body-env PR_BODY \
+          ${ENVELOPE:+--envelope "$ENVELOPE"} \
+          ${ATTESTATION:+--attestation "$ATTESTATION"} \
+          ${KEYS:+--keys "$KEYS"} \
+          $run_tests \
+          --require "$require_flag" \
+          --level 2 \
+          --render-comment \
+          --json > results.json
 
-        code = sys.argv[1]
-        raw = Path("results.raw.json")
-        if code == "0" and raw.exists() and raw.stat().st_size > 0:
-            data = json.loads(raw.read_text(encoding="utf-8"))
-            status = "verified" if data.get("verified") else "not-verified"
-        else:
-            # spec §8: no attestation found is the `unattested` STATE, not an
-            # error — a plain PR without scpe is simply unattested.
-            data = {"verified": False, "band": "", "flags": [], "matched": [],
-                    "added": 0, "removed": 0, "files": [],
-                    "tests": {"ran": False, "ok": False, "summary": "not run"},
-                    "provenance": "", "hook": ""}
-            status = "unattested"
-        data["status"] = status
-        data["require"] = True
-        data["gate_pass"] = status == "verified"
-        Path("results.json").write_text(json.dumps(data), encoding="utf-8")
-        PY
-        status=$(python3 -c "import json; print(json.load(open('results.json'))['status'])")
-        gate_pass=$(python3 -c "import json; print(str(json.load(open('results.json'))['gate_pass']).lower())")
+        # A §9 attestation carries no diff — only the digest of one — so the diff
+        # is recomputed here as `git diff BASE...HEAD` (three dots, matching the
+        # producer) and checked against the signed digest. That needs the base
+        # commit to actually be in the checkout: with actions/checkout's default
+        # `fetch-depth: 1` it is not, and the seal reports
+        # diff_source: "unavailable" with a `tampered` status whose detail says to
+        # set `fetch-depth: 0`. Same honest limitation level 1 already documents
+        # for commit-trailer reads.
         echo "results=results.json" >> "$GITHUB_OUTPUT"
-        echo "status=$status" >> "$GITHUB_OUTPUT"
-        echo "gate-pass=$gate_pass" >> "$GITHUB_OUTPUT"
+        echo "status=$(python3 -c "import json; print(json.load(open('results.json'))['status'])")" >> "$GITHUB_OUTPUT"
+        echo "gate-pass=$(python3 -c "import json; print(str(json.load(open('results.json'))['gate_pass']).lower())")" >> "$GITHUB_OUTPUT"

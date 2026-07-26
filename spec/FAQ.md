@@ -64,7 +64,10 @@ reserved (docs/ROADMAP.md).
 Different layer. Those attest *artifacts and builds*: what produced a release, from
 which sources, on which builder. SCPE attests a *contribution*: a diff from a
 stranger, at the pull-request boundary, before it ever becomes part of a build.
-SCPE's audit attestations already use in-toto Statement/DSSE formats where they fit.
+SCPE borrows in-toto's subject-by-digest shape but emits nothing in that format:
+`scpe/0.1` implements one attestation type (`agent-trace`), and a type carrying an
+in-toto Statement or a DSSE envelope would be a registry addition
+([../docs/governance.md](../docs/governance.md) §2), not a format break.
 
 **What's the relationship with `patatt` and `b4`?**
 Direct prior art, not a new idea. `patatt` ([mricon/patatt](https://github.com/mricon/patatt))
@@ -133,7 +136,7 @@ depth in [../docs/comparison.md](../docs/comparison.md).
 **Why not DSSE?**
 DSSE is a signing-envelope *primitive* that deliberately leaves identity, key distribution, and
 subject hashing out of band; SCPE *is* that out-of-band layer, and SSHSIG already gives it DSSE's
-byte-exact framing (SCPE reuses DSSE for audit-side attestations). Full comparison:
+byte-exact framing, so `scpe/0.1` carries no DSSE envelope of its own. Full comparison:
 [../docs/comparison.md](../docs/comparison.md).
 
 **Why not Sigstore?**

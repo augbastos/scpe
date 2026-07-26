@@ -11,6 +11,8 @@ question sends you there.
 ### Reference (each answers one question)
 - [design-decisions.md](design-decisions.md) — why SHA-256, why sign exact bytes, why the fixed provider table, why no server; the honest edges and the objections a skeptic arrives with.
 - [governance.md](governance.md) — how the protocol evolves: registering providers / attestation types / profiles / statuses; the versioning + compatibility policy.
+- [LEVELS.md](LEVELS.md) — the L1/L2/L3 ladder: what the maintainer-side Action actually gates on, why level 2 implying level 1 is a *gate* property and not a verifier one, and which parts of the seal it posts are the Action's reporting layer rather than the protocol.
+- [ROADMAP.md](ROADMAP.md) — what is deliberately deferred, and the extension slot each deferred item will land in.
 - [../spec/FAQ.md](../spec/FAQ.md) — why SSH, why the PR body, relation to Agent Trace / Sigstore / patatt.
 
 ### Prove it yourself

@@ -66,24 +66,25 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
 
       # All three verifiers shell out to `ssh-keygen -Y verify` (OpenSSH >= 8.2), conftest.py
-      # mints a throwaway ed25519 key per test, and scpe/sandbox.py drives `git apply`. These
-      # are hard dependencies of the suite, so assert them up front instead of letting a few
-      # hundred tests fail with a confusing error.
+      # mints a throwaway ed25519 key per test, and the producer drives `git`. These are hard
+      # dependencies of the suite, so assert them up front instead of letting a few hundred
+      # tests fail with a confusing error.
       - name: Check external binaries the suite depends on
         run: |
           command -v ssh-keygen
           command -v git
           ssh -V
 
-      # Editable, with both extras. tests/test_producer_cli.py skips unless the
-      # `scpe-envelope` console script is on PATH, tests/test_action_yaml.py needs pyyaml, and
-      # one MCP test needs the `mcp` SDK — installing less silently tests less.
+      # Editable, with the dev extra. tests/test_producer_cli.py skips unless the
+      # `scpe-envelope` console script is on PATH and tests/test_action_yaml.py needs pyyaml,
+      # so installing less silently tests less. The package itself is stdlib-only — that is
+      # what lets the Action run it straight from a checkout, with no install step.
       - name: Install
         run: |
           python -m pip install --upgrade pip
-          pip install -e ".[dev,mcp]"
+          pip install -e ".[dev]"
 
-      # From the repo root: there is no pytest config anywhere, and tests/test_mcp.py imports
+      # From the repo root: there is no pytest config anywhere, and the suite imports
       # `tests.conftest` as a package, so the root has to be what pytest prepends to sys.path.
       - name: pytest
         run: pytest --durations=10

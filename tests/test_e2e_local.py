@@ -1,243 +1,210 @@
-"""End-to-end local proof of the whole SCPE path -- no network, no public repo.
+"""The closed loop: the official producer writes it, the official verifier reads it, and
+the sealer the Action runs turns that verdict into results.json. Offline, no public repo.
 
-Chains every piece of the real flow together in one process, offline:
+This is the test the whole repositioning exists for. Before it, nothing proved that
+reference/producer.py and reference/standalone/verify_envelope.py understood each other
+through the transport they actually use (SPEC §9 — an attestation block in a PR body),
+and nothing proved that the Action's own command line could carry that verdict end to end.
 
-  Phase A (producer)    -> reference/producer.py: pack a real fix into a signed
-                            envelope, then attest() it into the exact
-                            SCPE-ATTESTATION-v1 block a PR body carries.
-  Phase B (maintainer)  -> what the GitHub Action's `verify` job actually does:
-                            extract the attestation block from the PR body,
-                            independently RECOMPUTE the base...head diff from the
-                            checked-out branch (never trust the diff.patch a
-                            producer chose to embed), and run the reference
-                            verifier (reference/standalone/verify_envelope.py,
-                            subprocess, --keys local `keys` file standing in for
-                            https://github.com/<login>.keys) against it.
-  Phase C (seal)         -> render the decision-first PR seal from the verified
-                            result via scpe.seal (the SAME box/pill/summary
-                            functions the real `scpe seal` CLI renders from).
-  Phase D (gate)         -> the require=true GATE decision computed exactly like
-                            action.yml / docs/workflows/scpe.yml: an unverified or
-                            absent attestation FAILS the check and the seal job
-                            posts the literal "Not verifiable" comment; a verified
-                            attestation passes it.
+  Phase A (contributor) -> reference/producer.py packs a real fix into a signed envelope
+                           and attests it into the exact SCPE-ATTESTATION-v1 block a PR
+                           body carries.
+  Phase B (runner)      -> `python -m scpe.cli seal` from a checkout: the same command
+                           action.yml runs, reading the body out of the environment (never
+                           argv), recomputing the base...head diff from the checked-out
+                           branch, and deferring the verdict to the one-file verifier.
+  Phase C (contract)    -> results.json carries every field action.yml and
+                           docs/workflows/scpe.yml read out of it.
+  Phase D (gate)        -> require=true decides merge; require=false only reports.
 
-Two outcomes are asserted end to end:
-  * POSITIVE -- a PR with a valid signed attestation -> verified, a seal renders,
-    and the require=true gate PASSES.
-  * NEGATIVE -- a PR with NO attestation at all -> unattested -> the require gate
-    REJECTS it with the exact "Not verifiable" comment (never silently passes).
+The gate is NOT recomputed here. It used to be — this file modelled `gate_pass` in a local
+helper — and a test that reimplements the decision cannot fail when the shipped decision is
+wrong. The sealer computes it now; the test only reads it.
 
-Throwaway ed25519 key + a local `keys` file standing in for
-https://github.com/<login>.keys -- same offline approach as
-tests/test_producer_roundtrip.py and spec/test-vectors. Nothing here touches the
-network, git remotes, or `gh`.
+Everything is local: a throwaway ed25519 key, a `keys` file standing in for
+https://github.com/<subject>.keys, and a git repo in tmp_path. No network, no gh, no
+package install.
 """
 from __future__ import annotations
 
-import importlib.util
-import json
-import subprocess
-import sys
-from pathlib import Path
+from tests.conftest import _git, load_producer, seal_json
 
-import pytest
+producer = load_producer()
 
-from scpe.seal import pr_pill, pr_seal, pr_summary_line, risk_band
-
-ROOT = Path(__file__).resolve().parent.parent
-PRODUCER_PATH = ROOT / "reference" / "producer.py"
-VERIFIER_PATH = ROOT / "reference" / "standalone" / "verify_envelope.py"
-
-# Load reference/producer.py by path, exactly like tests/test_producer_roundtrip.py --
-# it lives outside the scpe package on purpose (the spec's auditable reference impl).
-_spec = importlib.util.spec_from_file_location("scpe_producer_ref_e2e", PRODUCER_PATH)
-producer = importlib.util.module_from_spec(_spec)
-_spec.loader.exec_module(producer)
-
-# The literal comment the trusted "seal" job posts on require-mode rejection
-# (docs/workflows/scpe.yml, "Post the seal comment (or the gate failure)" step).
-# Written as unicode escapes, not literal bytes, so a failed assertion can still be
-# printed on a cp1252 Windows console without crashing the test run.
-NOT_VERIFIABLE_COMMENT = (
-    "❌ Not verifiable — this repository requires a signed SCPE "
-    "contribution (spec scpe/0.1)."
-)
+# Everything action.yml (:115, :166, :175-181) and docs/workflows/scpe.yml (:126, :131,
+# :138) read out of results.json. A field dropped from the sealer is a broken Action, and
+# the failure would otherwise surface as a confusing KeyError inside a runner, not here.
+ACTION_CONSUMED = ("status", "gate_pass", "require", "verified", "band", "flags",
+                   "matched", "rules_checked", "added", "removed", "files", "tests",
+                   "provenance", "hook", "login", "level")
 
 
-def _git(repo: Path, *args: str) -> str:
-    return subprocess.run(["git", "-C", str(repo), *args],
-                          check=True, capture_output=True, text=True).stdout.strip()
-
-
-@pytest.fixture
-def signing_key(tmp_path: Path) -> Path:
-    key = tmp_path / "scpe_e2e_ed25519"
-    subprocess.run(["ssh-keygen", "-t", "ed25519", "-f", str(key), "-N", "", "-q"],
-                   check=True, capture_output=True)
-    return key
-
-
-@pytest.fixture
-def keys_file(signing_key: Path, tmp_path: Path) -> Path:
-    """The local stand-in for https://github.com/<login>.keys -- the bare public key."""
-    kf = tmp_path / "keys"
-    kf.write_bytes(Path(str(signing_key) + ".pub").read_bytes())
-    return kf
-
-
-@pytest.fixture
-def repo_with_fix(tmp_path: Path) -> tuple[Path, str, str]:
-    """A throwaway repo: a base commit with a buggy `add`, then a second commit (the
-    'PR branch') with the one-line fix. Returns (repo, base_sha, head_sha)."""
-    repo = tmp_path / "repo"
-    repo.mkdir()
-    subprocess.run(["git", "init", "-b", "main", str(repo)], check=True, capture_output=True)
-    _git(repo, "config", "user.email", "e2e@example.com")
-    _git(repo, "config", "user.name", "E2E")
-    (repo / "calc.py").write_text(
-        "def add(a, b):\n    return a - b  # BUG: should add\n", encoding="utf-8")
-    _git(repo, "add", "-A")
-    _git(repo, "commit", "-m", "base: buggy add()")
-    base = _git(repo, "rev-parse", "HEAD")
-
-    _git(repo, "checkout", "-b", "fix/add-arithmetic")
-    (repo / "calc.py").write_text("def add(a, b):\n    return a + b\n", encoding="utf-8")
-    _git(repo, "add", "-A")
-    _git(repo, "commit", "-m", "fix: add() should add, not subtract")
-    head = _git(repo, "rev-parse", "HEAD")
-    return repo, base, head
-
-
-def _recompute_branch_diff(repo: Path, base: str, head: str) -> bytes:
-    """What the maintainer/Action side actually has to work with: independently
-    git-diff the checked-out base...head and normalize it exactly per SPEC §6 --
-    never trust the diff.patch bytes a producer chose to package in the envelope."""
-    raw = subprocess.run(["git", "-C", str(repo), "diff", f"{base}...{head}"],
-                         check=True, capture_output=True).stdout
-    return producer.normalize_diff(raw)
-
-
-def _run_verifier(path: Path, *, keys: Path | None = None, diff: Path | None = None) -> dict:
-    """Exactly the CLI invocation the verify job makes: the standalone reference
-    verifier, as a subprocess, --json."""
-    args = [sys.executable, str(VERIFIER_PATH), str(path), "--json"]
-    if keys is not None:
-        args += ["--keys", str(keys)]
-    if diff is not None:
-        args += ["--diff", str(diff)]
-    proc = subprocess.run(args, capture_output=True, text=True, timeout=120)
-    assert proc.stdout.strip(), f"no verifier output; stderr: {proc.stderr[-500:]}"
-    return json.loads(proc.stdout)
-
-
-def _gate_decision(status: str, *, require: bool) -> dict:
-    """The require-mode GATE decision, computed exactly like action.yml's untrusted
-    step (`data["gate_pass"] = status == "verified"`, default require=false ->
-    gate_pass=True unconditionally) and posted by docs/workflows/scpe.yml's trusted
-    "seal" step (the literal "Not verifiable" comment when gate_pass is False)."""
-    gate_pass = (not require) or status == "verified"
-    comment = None if gate_pass else NOT_VERIFIABLE_COMMENT
-    return {"status": status, "require": require, "gate_pass": gate_pass, "comment": comment}
-
-
-def _render_seal(*, login: str, verified: bool, diff_text: str,
-                 tests_ok: bool = True, tests_summary: str = "1 passed") -> str:
-    """Render the decision-first PR seal from already-verified data, reusing the
-    SAME box/pill/summary functions the real `scpe seal` CLI renders from
-    (scpe/seal.py) -- this test never reimplements the seal, only feeds it real,
-    verifier-derived inputs."""
-    band = risk_band(diff_text)
-    pill = pr_pill(band["band"], login, verified, tests_ok)
-    summary = pr_summary_line(band["band"], verified, tests_ok)
-    box = pr_seal(login=login, verified=verified, profile=f"https://github.com/{login}",
-                 band=band["band"], flags=band["flags"], added=1, removed=1,
-                 files=["calc.py"], tests_ok=tests_ok, tests_summary=tests_summary,
-                 provenance="human", rules_checked=band["rules_checked"])
-    return pill + "\n\n" + summary + "\n\n" + box
+def _pr_body(attestation_block: str) -> str:
+    return ("## Fix add()\n\n`add(a, b)` was subtracting instead of adding. "
+            "One-line fix.\n\n" + attestation_block)
 
 
 # ---------------------------------------------------------------------- POSITIVE
 
-def test_signed_pr_verifies_seals_and_gate_passes(
-        repo_with_fix, signing_key, keys_file, tmp_path):
-    """Phase A -> B -> C -> D, signed case: pack+attest a real fix, extract from a
-    realistic PR body, independently recompute the diff, verify -> "verified", a
-    seal renders, and the require=true gate PASSES (no "Not verifiable")."""
+def test_signed_pr_verifies_seals_and_gate_passes(repo_with_fix, signing_key, keys_file,
+                                                  tmp_path):
     repo, base, head = repo_with_fix
 
     # ---- Phase A: producer (contributor side), fully offline ----
     env = tmp_path / "envelope.zip"
     producer.pack(repo=repo, base=base, head=head, out=env,
-                 login="octocat-e2e", key=str(signing_key), ai_mode="assisted",
-                 ai_notes="fix add() sign bug", created_at="2026-07-21T18:00:00Z",
-                 repo_name="octocat-e2e/calc")
-    attestation_block = producer.attest(envelope=env, out=None)
-    assert "SCPE-ATTESTATION-v1" in attestation_block
+                  login="octocat-e2e", key=str(signing_key), ai_mode="assisted",
+                  ai_notes="fix add() sign bug", created_at="2026-07-21T18:00:00Z",
+                  repo_name="octocat-e2e/calc")
+    block = producer.attest(envelope=env, out=None)
+    assert "SCPE-ATTESTATION-v1" in block
 
-    pr_body = (
-        "## Fix add()\n\n`add(a, b)` was subtracting instead of adding. "
-        "One-line fix.\n\n" + attestation_block
-    )
-    pr_body_file = tmp_path / "pr_body.md"
-    pr_body_file.write_text(pr_body, encoding="utf-8")
+    # ---- Phase B: the runner's own command line ----
+    # The body reaches the sealer through the environment, exactly as action.yml passes
+    # it: a hostile PR body must never become a shell word or an argv element.
+    data, rc = seal_json(
+        "--pr-body-env", "SCPE_PR_BODY",
+        "--repo", str(repo), "--base", base, "--head", head,
+        "--keys", str(keys_file), "--require", "true", "--level", "2",
+        "--render-comment",
+        env_extra={"SCPE_PR_BODY": _pr_body(block), "PR_BODY": _pr_body(block)},
+        cwd=tmp_path)
 
-    # ---- Phase B: maintainer / Action verify job ----
-    # extract: the attestation is actually present in the PR body (same regex the
-    # standalone verifier itself uses to locate it).
-    assert producer.ATTESTATION_RE.search(pr_body), "attestation not found in PR body"
-    # recompute: independently diff the checked-out branch, do NOT reuse the
-    # diff.patch the producer happened to zip during pack().
-    recomputed_diff = _recompute_branch_diff(repo, base, head)
-    diff_file = tmp_path / "recomputed.diff"
-    diff_file.write_bytes(recomputed_diff)
+    # SPEC §8: a status is a state, not a crash. The sealer exits 0 whenever it produced
+    # a result at all — the Action needs the artifact to reach the trusted job even when
+    # the verdict is bad.
+    assert rc == 0, data
 
-    result = _run_verifier(pr_body_file, keys=keys_file, diff=diff_file)
-    assert result["status"] == "verified", result
-    assert result["attestations"] == []  # no attestations were packed
+    # ---- Phase C: the verdict, and the fields the Action reads ----
+    assert data["status"] == "verified", data
+    assert data["verified"] is True
+    for field in ACTION_CONSUMED:
+        assert field in data, f"results.json lost {field!r}, which the Action reads"
 
-    # ---- Phase C: a seal renders from the verified result ----
-    seal_text = _render_seal(login="octocat-e2e", verified=True,
-                             diff_text=recomputed_diff.decode("utf-8"))
-    assert "octocat-e2e" in seal_text
-    assert "verified" in seal_text
-    assert "UNVERIFIED" not in seal_text
+    # The diff was NOT taken from the producer's own zip: an attestation carries no diff,
+    # so the sealer had to recompute base...head from the checkout and the verifier had to
+    # find that hash inside the signed manifest.
+    assert data["diff_source"] == "git"
+    assert data["key_source"] == "flag"        # --keys, not a submitter-chosen key set
+    assert data["spec_version"] == "scpe/0.1"
+    assert data["provider"] == "github"
+    assert data["subject"] == "octocat-e2e"
+    assert data["login"] == data["subject"]    # deprecated alias, still emitted
+    assert data["subject_type"] == "code-change"
+    assert data["target_repo"] == "octocat-e2e/calc"
+    assert data["base_sha"] == base and data["head_sha"] == head
+    assert data["attestations"] == []          # none were packed
 
-    # ---- Phase D: require-mode gate ----
-    decision = _gate_decision(result["status"], require=True)
-    assert decision["gate_pass"] is True
-    assert decision["comment"] is None
+    # Provenance now comes from the SIGNED ai_disclosure block, not from an unsigned field.
+    assert data["ai_disclosure"]["mode"] == "assisted"
+    assert data["disclosure_present"] is True
+    assert data["provenance"].startswith("AI-assisted")
+    assert "fix add() sign bug" in data["provenance"]
+
+    # Risk + counts describe the recomputed diff (one line changed, one file).
+    assert data["band"] == "LOW" and data["flags"] == []
+    assert data["added"] == 1 and data["removed"] == 1
+    assert data["files"] == ["calc.py"]
+    assert data["tests"] == {"ran": False, "ok": False, "summary": "not run"}
+
+    # ---- Phase D: the gate, as computed by the sealer ----
+    assert data["require"] is True
+    assert data["gate_pass"] is True
+    assert not data.get("fail_message")
+
+    # --render-comment pre-renders in the UNTRUSTED job so the trusted job only pastes.
+    comment = data["comment"]
+    assert comment.startswith("### scpe")
+    assert "octocat-e2e" in comment and "```" in comment
 
 
 # ---------------------------------------------------------------------- NEGATIVE
 
 def test_unsigned_pr_is_unattested_and_gate_rejects(repo_with_fix, tmp_path):
-    """Same fix, same repo -- but the PR body carries NO SCPE attestation at all
-    (the ordinary case: a contributor who never ran the producer). The verify job
-    must call it "unattested", and the require=true gate must REJECT it with the
-    exact comment the real Action posts -- never silently pass an unsigned PR."""
+    """The ordinary PR: a contributor who never ran the producer. `unattested` is a
+    state (SPEC §8), so the step still succeeds — but require=true must refuse to merge
+    it, and must say so in a message the trusted job can post verbatim."""
     repo, base, head = repo_with_fix
+    plain_body = "## Fix add()\n\nOne-line fix, no attestation.\n"
 
-    pr_body = ("## Fix add()\n\n`add(a, b)` was subtracting instead of adding. "
-               "One-line fix.\n")
-    pr_body_file = tmp_path / "pr_body_unsigned.md"
-    pr_body_file.write_text(pr_body, encoding="utf-8")
-    assert not producer.ATTESTATION_RE.search(pr_body)
+    data, rc = seal_json(
+        "--pr-body-env", "SCPE_PR_BODY",
+        "--repo", str(repo), "--base", base, "--head", head,
+        "--require", "true", "--level", "2",
+        env_extra={"SCPE_PR_BODY": plain_body, "PR_BODY": plain_body},
+        cwd=tmp_path)
 
-    recomputed_diff = _recompute_branch_diff(repo, base, head)
-    diff_file = tmp_path / "recomputed_unsigned.diff"
-    diff_file.write_bytes(recomputed_diff)
+    assert rc == 0, data                      # a state, never an error
+    assert data["status"] == "unattested"
+    assert data["verified"] is False
+    assert data["gate_pass"] is False
+    assert data["fail_message"], "a failing gate must hand the trusted job a message"
+    assert "scpe/0.1" in data["fail_message"]
 
-    result = _run_verifier(pr_body_file, diff=diff_file)
-    assert result["status"] == "unattested", result
+    # Nothing was VERIFIED, so nothing about the contributor is claimed: no key anchor, no
+    # disclosure, no provenance line. The risk band is different in kind — it is scanned
+    # from the diff in the checkout, which exists whether or not anyone signed it, so an
+    # unattested PR still gets a real band. Asserting it empty here would delete the seal's
+    # only useful output on exactly the PRs that arrive carrying no proof at all.
+    assert data["key_source"] is None
+    assert data["disclosure_present"] is False
+    assert "band" in data and data["band"] in ("", "LOW", "MEDIUM", "HIGH")
+    assert data["flags"] == []
+    assert data["provenance"] == ""
 
-    decision = _gate_decision(result["status"], require=True)
-    assert decision["gate_pass"] is False
-    assert decision["comment"] == NOT_VERIFIABLE_COMMENT
 
-    # sanity: the SAME unsigned PR passes fine when require=false (today's
-    # default, informational-only path) -- the gate is opt-in policy on top of
-    # verification, not a hard block baked into the verifier itself.
-    lenient = _gate_decision(result["status"], require=False)
-    assert lenient["gate_pass"] is True
-    assert lenient["comment"] is None
+def test_same_unsigned_pr_passes_when_require_is_false(repo_with_fix, tmp_path):
+    """require=false is the informational default: the status is still reported honestly,
+    the gate simply does not act on it. Gating is policy layered on verification, never
+    something baked into the verifier."""
+    repo, base, head = repo_with_fix
+    plain_body = "## Fix add()\n\nOne-line fix, no attestation.\n"
+
+    data, rc = seal_json(
+        "--pr-body-env", "SCPE_PR_BODY",
+        "--repo", str(repo), "--base", base, "--head", head,
+        "--require", "false", "--level", "2",
+        env_extra={"SCPE_PR_BODY": plain_body, "PR_BODY": plain_body},
+        cwd=tmp_path)
+
+    assert rc == 0
+    assert data["status"] == "unattested"     # informational != silent
+    assert data["require"] is False
+    assert data["gate_pass"] is True
+    # The message is still computed — it is a PREVIEW of what turning the gate on would
+    # say. The trusted job only reads it when gate_pass is false, so previewing costs
+    # nothing and lets a maintainer see the consequence before opting in.
+    assert data["fail_message"]
+
+
+def test_a_tampered_diff_is_named_not_just_rejected(repo_with_fix, signing_key, keys_file,
+                                                    tmp_path):
+    """Sign the fix, then push a further commit the signature never covered. The gate must
+    fail, and `detail` must say WHICH check failed — "not-verified" told a maintainer
+    nothing actionable; "tampered: diff sha256 does not match" tells them everything."""
+    repo, base, head = repo_with_fix
+    env = tmp_path / "envelope.zip"
+    producer.pack(repo=repo, base=base, head=head, out=env, login="octocat-e2e",
+                  key=str(signing_key), created_at="2026-07-21T18:00:00Z",
+                  repo_name="octocat-e2e/calc")
+    body = _pr_body(producer.attest(envelope=env, out=None))
+
+    # a commit added AFTER signing — the classic "sign clean, then slip one in"
+    (repo / "calc.py").write_text(
+        "def add(a, b):\n    return a + b\n\n\ndef exfil():\n    import socket\n",
+        encoding="utf-8")
+    _git(repo, "add", "-A")
+    _git(repo, "commit", "-m", "chore: unrelated")
+    new_head = _git(repo, "rev-parse", "HEAD")
+
+    data, rc = seal_json(
+        "--pr-body-env", "SCPE_PR_BODY",
+        "--repo", str(repo), "--base", base, "--head", new_head,
+        "--keys", str(keys_file), "--require", "true", "--level", "2",
+        env_extra={"SCPE_PR_BODY": body, "PR_BODY": body}, cwd=tmp_path)
+
+    assert rc == 0
+    assert data["status"] == "tampered", data
+    assert data["gate_pass"] is False
+    assert "diff_sha256" in data["detail"] or "diff sha256" in data["detail"], data["detail"]
+    assert "tampered" in data["fail_message"]

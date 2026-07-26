@@ -31,6 +31,8 @@ import re
 import subprocess
 import sys
 import tempfile
+import urllib.parse
+import urllib.request
 import zipfile
 from pathlib import Path
 
@@ -135,20 +137,92 @@ def key_fingerprint(key_path: Path) -> str:
     return out.split()[1]  # "256 SHA256:... comment" -> "SHA256:..."
 
 
+_DEFAULT_KEY_PATH = "~/.ssh/scpe_ed25519"
+_GITHUB_KEYS_URL = "https://github.com/{login}.keys"
+_MAX_KEYS_BYTES = 1_000_000
+
+
+def _gh_user() -> str:
+    """The login of the authenticated gh CLI. Only the login is needed here: the manifest
+    carries `(provider, subject)` and never an id, a name, or an email (SPEC §8)."""
+    try:
+        r = subprocess.run(["gh", "api", "user"], capture_output=True, timeout=30)
+    except FileNotFoundError as exc:
+        raise ProducerError(
+            "gh CLI not found — install GitHub CLI and run `gh auth login`, "
+            "or pass --login and --key to sign fully offline") from exc
+    except subprocess.TimeoutExpired as exc:
+        raise ProducerError("`gh api user` timed out") from exc
+    if r.returncode != 0:
+        raise ProducerError(
+            "gh is not authenticated — run `gh auth login` "
+            f"({r.stderr.decode(errors='replace').strip()[:200]})")
+    try:
+        login = json.loads(r.stdout.decode("utf-8", "replace")).get("login")
+    except json.JSONDecodeError as exc:
+        raise ProducerError(f"unexpected `gh api user` output: {exc}") from exc
+    if not login:
+        raise ProducerError("`gh api user` returned no login")
+    return str(login)
+
+
+def _read_pubkey(key_path: Path) -> str:
+    """The bare `<type> <base64>` line, with any trailing comment dropped — the same shape
+    the forge publishes, so the two can be compared directly."""
+    pub = Path(str(key_path) + ".pub")
+    if not pub.exists():
+        raise ProducerError(
+            f"no signing key at {pub} — create one with "
+            f'ssh-keygen -t ed25519 -f {key_path} -N "" and register it: '
+            f"gh ssh-key add {pub} --type signing --title scpe")
+    parts = pub.read_text(encoding="utf-8").strip().split()
+    if len(parts) < 2:
+        raise ProducerError(f"malformed public key at {pub}")
+    return f"{parts[0]} {parts[1]}"
+
+
+def _published_keys(login: str, *, timeout: int = 15) -> list[str]:
+    """What github.com/<login>.keys publishes right now, normalized like _read_pubkey.
+
+    This is a producer-side COURTESY CHECK, not a security boundary: it stops you from
+    packing an envelope that the owner would only fail to verify later. The authoritative
+    key resolution lives in the verifier (SPEC §8 step 4), which is stricter — fixed
+    provider table, no redirects, size cap, and it reports the anchor it used.
+    """
+    req = urllib.request.Request(_GITHUB_KEYS_URL.format(login=urllib.parse.quote(login, safe="")),
+                                 headers={"User-Agent": "scpe-producer"})
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as resp:
+            body = resp.read(_MAX_KEYS_BYTES).decode("utf-8", "replace")
+    except OSError as exc:
+        raise ProducerError(f"could not read published keys for {login}: {exc}") from exc
+    out = []
+    for line in body.splitlines():
+        parts = line.strip().split()
+        if len(parts) >= 2:
+            out.append(f"{parts[0]} {parts[1]}")
+    return out
+
+
 def resolve_login_and_key(login: str | None, key: str | None) -> tuple[str, Path]:
-    """Explicit --login/--key run fully offline (tests, CI, air-gapped signing). When
-    omitted, fall back to the well-tested gh-CLI resolver in the legacy package, which
-    confirms the key is actually published on the account before it lets you sign."""
+    """Explicit --login/--key run fully offline (tests, CI, air-gapped signing). Without
+    them, resolve the login from the authenticated gh CLI and confirm the signing key is
+    actually published on that account before letting you sign — packing an envelope your
+    reviewer cannot verify is a worse failure than refusing to pack it.
+
+    Self-contained on purpose: this module is stdlib-only, and depending on the installable
+    package would make the reference producer need an install the verifier does not.
+    """
     if login and key:
         return login, Path(key)
-    try:
-        from scpe.identity import resolve_local_identity  # lazy: offline path never imports it
-    except Exception as exc:  # pragma: no cover - only when scpe unavailable
+    resolved_login = login or _gh_user()
+    kp = Path(key).expanduser() if key else Path(_DEFAULT_KEY_PATH).expanduser()
+    pubkey = _read_pubkey(kp)
+    if pubkey not in _published_keys(resolved_login):
         raise ProducerError(
-            "pass --login and --key for offline signing (gh-based resolution unavailable: "
-            f"{exc})") from exc
-    ident = resolve_local_identity(key_path=key)
-    return ident.login, Path(ident.key_path)
+            f"signing key {kp}.pub is not published on github.com/{resolved_login} — add it: "
+            f"gh ssh-key add {kp}.pub --type signing --title scpe")
+    return resolved_login, kp
 
 
 # ------------------------------------------------------------------- manifest (§4)

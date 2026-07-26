@@ -287,8 +287,9 @@ pull-request boundary specifically, not a better commit-signing scheme.
 **9. A build- or artifact-provenance system (SLSA / in-toto / Sigstore's usual job).** Those systems
 attest what produced a *release build*, from which sources, on which builder. SCPE attests a
 *contribution* — a diff from a stranger, at the pull-request boundary, before any build happens
-(FAQ). SCPE's audit-attestation format borrows the in-toto Statement/DSSE shape where it fits, but
-does not attest builder identity, build environment, or supply-chain steps downstream of the merge.
+(FAQ). SCPE's `subject`-by-digest block borrows the in-toto Statement's shape, but SCPE emits no
+in-toto/DSSE envelope of its own and does not attest builder identity, build environment, or
+supply-chain steps downstream of the merge.
 
 **10. An EU AI Act compliance solution.** SCPE's signed AI-usage disclosure is *adjacent* to Article
 50's machine-readable-disclosure obligation, not a solution for it — Article 50 concerns marking

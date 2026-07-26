@@ -104,7 +104,7 @@ claimed** — never that the claim itself is true.
 
 | Protocol | What it is | The gap SCPE fills |
 |---|---|---|
-| **DSSE** | A signing-envelope *primitive* (`payload` / `payloadType` / `signatures` over a length-prefixed PAE) that deliberately leaves identity, key distribution, subject hashing, and policy "out of band." The signing substrate under in-toto and SLSA. | SCPE **is** that out-of-band layer, filled in for one concrete case: fixed identity resolution, per-type subject hashing, a PR-body transport, and a maintainer acceptance policy. Compatible, not rival — SCPE's audit-side attestations use DSSE where it fits. |
+| **DSSE** | A signing-envelope *primitive* (`payload` / `payloadType` / `signatures` over a length-prefixed PAE) that deliberately leaves identity, key distribution, subject hashing, and policy "out of band." The signing substrate under in-toto and SLSA. | SCPE **is** that out-of-band layer, filled in for one concrete case: fixed identity resolution, per-type subject hashing, a PR-body transport, and a maintainer acceptance policy. Compatible, not rival — `attestations[]` is a typed slot a DSSE-wrapped statement could occupy under a future registered type, though nothing in `scpe/0.1` emits or verifies one. |
 | **Sigstore** | Keyless signing via an online CA (**Fulcio**, OIDC-bound short-lived certs) + a public transparency log (**Rekor**), driven by the **Cosign** client. Built for release-artifact provenance. | SCPE needs **no server, no CA, no transparency log** — it verifies against the SSH keys a forge already publishes (one HTTPS GET at verify time) or, fully offline, against a supplied keys file; it reports which anchor answered as `key_source`, since only the forge one carries the account claim (THREAT_MODEL §2.1). It signs a *contribution* at PR time, before any build. Sigstore as an opt-in signing method is on the `scpe/0.2` roadmap. |
 | **patatt / b4** | End-to-end cryptographic attestation for **email patches** (kernel.org): a DKIM-style `X-Developer-Signature` header, ed25519/PGP/OpenSSH keys, an in-repo keyring, verified independently with no CA. b4 is the maintainer-side tool. | Direct prior art, not a new idea — SCPE brings the same trust shape to the **forge pull request** (where patatt explicitly does not reach) with a contribution-shaped, extensible payload (diff + AI disclosure + attribution) and an acceptance policy. |
 | **C2PA** | Content Credentials for **media assets** — provenance assertions + a signed claim (COSE/X.509, validated against a Trust List) **embedded inside** the file via byte-range/box hashing. | Media-authenticity standard; its unit is a finished asset with an embedded manifest and a PKI trust list. SCPE's unit is a stranger's **diff** in a PR body, verified before merge with no CA. SCPE names the media domains as future profiles rather than competing. |
@@ -132,8 +132,10 @@ signs the **exact bytes of `manifest.json` with SSHSIG** (`ssh-keygen -Y sign`, 
 `scpe/0.1`) rather than base64-wrapping under PAE — reusing keys a forge already publishes and
 keeping canonicalization out of a single stdlib-only verifier. This is a trade, not a claim of
 superiority: DSSE is more general (algorithm- and payload-agnostic) and carries the ecosystem
-gravity of in-toto/SLSA. The two are compatible — SCPE uses DSSE for audit-side attestations
-where it fits.
+gravity of in-toto/SLSA. The two are compatible rather than exclusive: `scpe/0.1` emits and
+verifies no DSSE envelope of its own — it implements exactly one attestation type
+(`agent-trace`) — but `attestations[]` is the typed slot a DSSE-wrapped statement could ride
+in later, as a registry entry rather than a format break (`docs/governance.md` §2).
 
 ## Sigstore
 
@@ -225,10 +227,12 @@ current spec v1.2; v1.0 retired) is Supply-chain Levels for Software Artifacts: 
 **build-provenance** levels (L0–L3) whose provenance predicate documents builder identity,
 source, and build parameters as an in-toto Statement wrapped in DSSE, with the **build platform
 as the trusted verification point**. SLSA v1.2's Build Track is mature; a Source Track is under
-development. SCPE reuses this shape — in-toto's `subject.digest` + `predicateType` is
-structurally close to SCPE's `subject` + `attestations[]`, and SCPE uses in-toto Statement /
-DSSE for its audit-side attestations where they fit — and mirrors the level laddering (Levels
-1/2/3, explicitly crediting the SLSA-levels model). But SCPE fills a **pre-build** gap: its
+development. SCPE borrows this shape — in-toto's `subject.digest` + `predicateType` is
+structurally close to SCPE's `subject` + `attestations[]`, close enough that an in-toto
+Statement could be carried verbatim under a future registered attestation type, though
+`scpe/0.1` implements only `agent-trace` and produces no in-toto/DSSE output itself — and
+mirrors the level laddering (Levels 1/2/3, explicitly crediting the SLSA-levels model). But
+SCPE fills a **pre-build** gap: its
 subject is a diff from a stranger at PR time with **no build and no builder** in the loop (the
 fetched SLSA v1.0 summary states it "does not address pre-build contributions, pull request
 review processes, or evaluation of individual code changes from external contributors"). It

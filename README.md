@@ -78,6 +78,26 @@ license choice here; it's the whole point.
 For how SCPE relates to code review, build provenance, and attribution records, see
 [docs/comparison.md](docs/comparison.md).
 
+## What ships in this repo
+
+A protocol, and the smallest set of things needed to prove it is one. Nothing here writes,
+reviews, or generates code — SCPE never looks at what a change *does*, only at who signed it and
+whether it still matches.
+
+| | What it is |
+|---|---|
+| [`spec/`](spec/) | The normative protocol: [SPEC.md](spec/SPEC.md), the threat model, the manifest schema, and 18 test vectors that are the conformance contract. |
+| [`reference/standalone/verify_envelope.py`](reference/standalone/verify_envelope.py) | **The verifier.** One stdlib-only file that imports nothing else in this repo. |
+| [`reference/producer.py`](reference/producer.py) | The producer (`scpe-envelope pack` / `attest` / `submit`) — signs an envelope with a key the contributor already owns. |
+| [`impl/go/`](impl/go/), [`impl/rust/`](impl/rust/) | Two independent ports of the verifier, held to the same verdict by a differential test. |
+| [`action.yml`](action.yml) | The maintainer-side GitHub Action. It runs the verifier above, on the same format, out of its own checkout. |
+| [`scpe/`](scpe/) | The `scpe-protocol` package: a stdlib-only CLI over that same verifier, plus the seal the Action renders and the opt-in badge. |
+
+The package is a *distribution* of the protocol, not a second implementation of it: `scpe verify`
+is a passthrough whose JSON and exit code are byte-identical to running the single file directly.
+There is one envelope format, one verification algorithm, and one verdict — everything above is a
+different way of reaching the same one.
+
 ## The assurance ladder
 
 Adopt at the level that fits your project, and upgrade later without changing the format.
@@ -102,12 +122,17 @@ SLSA uses to sell levels. See [docs/LEVELS.md](docs/LEVELS.md).
    attestation embedded in the PR body. Merging leaves the repo history clean.
 3. The **owner's side** re-derives everything itself, with no SCPE server involved: the diff's
    SHA-256 is recomputed from the PR and compared, and a seal is posted (or, in require mode, an
-   unverifiable PR is rejected). The two verifiers differ in exactly one place — where the keys
-   come from:
-   - The **GitHub Action** always fetches `github.com/<login>.keys` live and accepts no
-     substitute. A contribution cannot supply the keys that judge it, so a passing check on a
-     `github` identity always means the forge published that key.
-   - The **single-file verifier**, auditable in ten minutes, is the general tool: it resolves a
+   unverifiable PR is rejected). There is **one verifier, not two** — the Action runs the same
+   single-file verifier described below, out of its own checkout at the tag you pinned, so there
+   is no second implementation to drift. What can differ between runs is only which key anchor
+   answers, and the result always names it:
+   - **Through the Action**, a contribution cannot substitute the keys that judge it. The
+     transport carries `manifest.json` and `manifest.sig` and nothing else (SPEC §9), so there is
+     no enclosed key set to find and the keys come from `github.com/<login>.keys`, live, at
+     `key_source: forge`. A maintainer running air-gapped can hand it a keys file of their own
+     instead — that reports `flag`, and the seal says so, because "the keys this repo supplied"
+     is a different claim from "the keys GitHub serves for that account".
+   - **Run directly**, the same file is the general tool, auditable in ten minutes: it resolves a
      keys file you pass it first, then any `keys` file bundled in the input, and only if neither
      answers, one HTTPS GET to the contributor's host. It reports which one answered as
      `key_source`, so an offline conformance run is never mistaken for a forge check.
@@ -136,14 +161,23 @@ Add a workflow that verifies every PR and posts a seal. Set `require` to gate me
 
 ```yaml
 # .github/workflows/scpe.yml — see docs/workflows/scpe.yml for the fork-safe full version
-- uses: augbastos/scpe@v0.1
+- uses: augbastos/scpe@v1
   with:
     level: "1"        # 1 = disclosure lint · 2 = signed envelope required
     require: "true"   # fail the check on anything not verifiable
 ```
 
 The Action uses a fork-safe two-job split: the untrusted job (which runs contributor code) holds
-no secrets; only a trusted follow-up job posts the comment.
+no secrets; only a trusted follow-up job posts the comment. Neither level installs anything in the
+runner — both run stdlib-only Python straight out of the Action's own checkout, so the bytes that
+decide a merge are the bytes of the tag you pinned, not whatever a package index serves that day.
+Check out with `fetch-depth: 0`: level 2 recomputes the diff as `git diff <base>...<head>`, and the
+default shallow checkout has no base commit to compare against.
+
+The seal it posts carries more than the verdict — a risk band, a file/line count, an optional test
+run. **Those are the Action's own reporting layer, not part of the protocol**: no status, no
+`verified`, and nothing in `spec/` depends on them. The verdict is the verifier's; the rest is a
+report.
 
 ## Verify anything yourself
 

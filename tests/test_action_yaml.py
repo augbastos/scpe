@@ -3,7 +3,7 @@
 The load-bearing security property is the two-job untrusted/trusted split:
 the `pull_request`-triggered job runs the contributor's code with NO secrets,
 and the `workflow_run`-triggered job (which never runs untrusted code) is the
-one that holds secrets and posts the seal comment. This test parses both YAML
+one that holds write access and posts the seal comment. This test parses both YAML
 files and asserts that split holds, so a careless edit can't quietly wire a
 secret into the untrusted job.
 
@@ -14,6 +14,15 @@ to the trusted job purely as data (results.json); the trusted job only ever
 READS that decision to post a pass/fail comment — it never re-derives a
 security-relevant verdict from raw contributor input, and it never gives the
 untrusted job write access to get there.
+
+Two things changed with the move to the spec format, and both are asserted below.
+The Action no longer downloads anything: it runs the package straight out of its own
+checkout (`PYTHONPATH=${{ github.action_path }}`), so the bytes that verify are the
+bytes of the tag the caller pinned rather than whatever the index served that minute.
+And the comment is now rendered in the untrusted job. That does not move the trust
+boundary — the trusted job already posted a string derived from attacker-controlled
+data (that is exactly what level 1 does) — it moves the ESCAPING obligation onto the
+renderer, which tests/test_seal_render.py holds to it.
 """
 from pathlib import Path
 
@@ -33,6 +42,36 @@ def _dump(obj) -> str:
     return yaml.safe_dump(obj)
 
 
+def _run_script() -> str:
+    return _load(_ACTION)["runs"]["steps"][0]["run"]
+
+
+def _level_1_block(run_script: str) -> str:
+    start = run_script.find('if [ "${{ inputs.level }}" = "1" ]')
+    assert start >= 0, "the level==1 branch disappeared"
+    end = run_script.find("\nfi", start)
+    assert end > start
+    return run_script[start:end]
+
+
+def _level_2_block(run_script: str) -> str:
+    """Everything after the `level != 2` guard closes — the signed-envelope path."""
+    guard = run_script.find('if [ "${{ inputs.level }}" != "2" ]')
+    assert guard >= 0, "the unsupported-level guard disappeared"
+    end = run_script.find("\nfi", guard)
+    assert end > guard
+    return run_script[end:]
+
+
+def _seal_invocation_pos(run_script: str) -> int:
+    """Where the sealer is actually invoked. It used to be findable by searching for
+    `inputs.require`, but require now rides in through the step's env: block like every
+    other attacker-adjacent value, so the anchor is the command itself."""
+    pos = run_script.find("scpe.cli")
+    assert pos >= 0, "the level-2 branch no longer runs the packaged sealer"
+    return pos
+
+
 def test_both_files_are_valid_yaml():
     action = _load(_ACTION)
     workflow = _load(_WORKFLOW)
@@ -43,8 +82,12 @@ def test_both_files_are_valid_yaml():
 def test_composite_action_loads_and_is_a_thin_wrapper():
     action = _load(_ACTION)
     assert action["runs"]["using"] == "composite"
-    # The action delegates to the CLI, not a bespoke CI script.
-    assert "scpe seal" in _dump(action)
+    # The action delegates to the CLI, not a bespoke CI script. The invocation is now
+    # `python3 -m scpe.cli seal` rather than a `scpe seal` console script, because a
+    # console script implies an install and an install implies a package index.
+    dump = _dump(action)
+    assert "scpe.cli" in dump
+    assert "seal" in dump
 
 
 def _pull_request_job(workflow: dict) -> dict:
@@ -75,11 +118,11 @@ def test_pull_request_job_runs_seal_json_and_uploads_an_artifact():
     workflow = _load(_WORKFLOW)
     untrusted = _pull_request_job(workflow)
     steps = untrusted["steps"]
-    # The seal runs either inline (`scpe seal ... --json`) or via the published
+    # The seal runs either inline (`... seal ... --json`) or via the published
     # Marketplace composite action, which runs exactly that internally and emits
     # results.json. Either form satisfies "the untrusted job computes the verdict".
     ran_seal = any(
-        ("scpe seal" in str(s.get("run", "")) and "--json" in str(s.get("run", "")))
+        ("seal" in str(s.get("run", "")) and "--json" in str(s.get("run", "")))
         or "augbastos/scpe@" in str(s.get("uses", ""))
         for s in steps
     )
@@ -88,17 +131,46 @@ def test_pull_request_job_runs_seal_json_and_uploads_an_artifact():
     assert uploads, "untrusted job must upload an artifact"
 
 
+def test_untrusted_job_checks_out_deep_enough_to_recompute_the_diff():
+    """A SPEC §9 attestation carries no diff: integrity is checked against
+    `git diff <base>...<head>` recomputed from the checkout. actions/checkout defaults to
+    `fetch-depth: 1`, which does not contain the base commit — so with the default, every
+    signed PR would report `tampered` and the level-2 seal would be structurally incapable
+    of proving anything. The sample workflow has to say so out loud."""
+    workflow = _load(_WORKFLOW)
+    untrusted = _pull_request_job(workflow)
+    checkouts = [s for s in untrusted["steps"] if "actions/checkout" in str(s.get("uses", ""))]
+    assert checkouts, "the untrusted job must check the repository out"
+    with_block = checkouts[0].get("with") or {}
+    assert str(with_block.get("fetch-depth")) == "0", (
+        "checkout needs fetch-depth: 0 so the base commit exists locally")
+    # ...and it still must not persist the token into .git/config.
+    assert with_block.get("persist-credentials") is False
+
+
 def test_workflow_run_job_is_the_trusted_comment_poster():
     workflow = _load(_WORKFLOW)
     trusted = _workflow_run_job(workflow)
-    blob = _dump(trusted)
-    # It holds a secret (the optional owner-LLM re-check) ...
-    assert "secrets." in blob
-    # ... and it is the job that posts the PR comment.
+    # It is the job that holds write access ...
+    assert (trusted.get("permissions") or {}).get("pull-requests") == "write"
+    # ... and the job that posts the PR comment. (It no longer references `secrets.` at
+    # all: the optional owner-LLM re-check was a stub that never called a model, and it
+    # was the only secret in the file.)
     posts_comment = any(
         "gh pr comment" in str(s.get("run", "")) for s in trusted["steps"]
     )
     assert posts_comment, "workflow_run job must post the seal comment"
+
+
+def test_trusted_job_never_runs_contributor_code_or_installs_anything():
+    """Its whole safety argument is that it holds a write token and executes nothing from
+    the PR. Downloading a package at run time would break that: `pipx run --spec` resolves
+    the newest release at that moment, inside the job that can comment as the repository."""
+    trusted = _workflow_run_job(_load(_WORKFLOW))
+    blob = _dump(trusted)
+    assert "pipx" not in blob
+    assert "pip install" not in blob
+    assert "actions/checkout" not in blob
 
 
 def test_the_two_jobs_are_distinct():
@@ -126,12 +198,11 @@ def test_verify_job_wires_require_input_to_the_composite_action():
 
 
 def test_require_decision_is_computed_in_the_untrusted_action_not_the_trusted_job():
-    # The classification logic ("unattested" vs "verified" vs "not-verified" and
-    # the gate_pass boolean derived from it) lives in the untrusted composite
-    # action — the one step that actually sees the verification result...
-    action_blob = _dump(_load(_ACTION))
-    assert "unattested" in action_blob
-    assert "gate_pass" in action_blob
+    # The gate decision is made where the verification result is: the untrusted step
+    # hands `--require` to the sealer, which writes gate_pass into results.json...
+    run_script = _run_script()
+    assert "--require" in run_script
+    assert "gate_pass" in _dump(_load(_ACTION))
 
     # ...and the trusted job must never re-derive that verdict itself: it may
     # only ever READ a precomputed gate_pass out of the artifact.
@@ -167,14 +238,15 @@ def test_untrusted_job_never_holds_pull_requests_write():
         assert workflow_perms.get("pull-requests") != "write"
 
 
-def test_informational_default_path_is_unchanged_when_require_is_false():
-    # require=false must still be the exact "informational seal" behavior: the
-    # composite action's default-path branch calls `scpe seal --json` the same
-    # way it always has, with no gate-only side effects gated behind it.
-    action = _load(_ACTION)
-    run_script = action["runs"]["steps"][0]["run"]
-    assert 'inputs.require' in run_script
-    assert '!= "true"' in run_script or "!= 'true'" in run_script
+def test_require_is_passed_as_a_value_not_branched_on():
+    """require used to fork the script into two nearly identical `pipx` calls, one of
+    which hardcoded `status=n/a` and threw the real verdict away. The sealer now always
+    emits the §8 status and computes the gate itself, so there is one code path and
+    `require` is data."""
+    run_script = _run_script()
+    assert '$REQUIRE' in run_script, "require must reach the sealer through env"
+    assert 'if [ "${{ inputs.require }}"' not in run_script
+    assert "status=n/a" not in run_script
 
 
 # ---- level 1: zero-friction AI-disclosure lint -------------------------------
@@ -189,35 +261,50 @@ def test_level_input_exists_and_defaults_to_the_full_seal():
 
 
 def test_level_1_branch_exists_and_is_checked_before_the_existing_flow():
-    action = _load(_ACTION)
-    run_script = action["runs"]["steps"][0]["run"]
+    run_script = _run_script()
     assert 'inputs.level' in run_script
     assert '"1"' in run_script
-    # The level==1 check must come BEFORE the require check that follows it, so a
-    # level=1 caller never falls through into the envelope-based flow at all.
+    # The level==1 check must come BEFORE the sealer runs, so a level=1 caller never
+    # falls through into the envelope-based flow at all.
     level_pos = run_script.find('inputs.level')
-    require_pos = run_script.find('inputs.require')
-    assert 0 <= level_pos < require_pos, \
-        "level must be branched on before the require/envelope flow runs"
+    assert 0 <= level_pos < _seal_invocation_pos(run_script), \
+        "level must be branched on before the signed-envelope flow runs"
 
 
-def test_level_1_never_calls_pipx_or_installs_the_scpe_package():
-    # The whole point of level 1 is zero friction: no envelope, no signing key, and
-    # (unlike level 2) no `pipx run scpe` at all — just a stdlib script read
-    # straight out of the action's own checkout.
-    action = _load(_ACTION)
-    run_script = action["runs"]["steps"][0]["run"]
-    level_block_start = run_script.find('if [ "${{ inputs.level }}" = "1" ]')
-    level_block_end = run_script.find("fi", level_block_start)
-    level_block = run_script[level_block_start:level_block_end]
-    # The word "pipx" may appear in an explanatory comment (see action.yml); what
-    # must never appear is an actual shell invocation of the pipx binary — i.e. a
-    # non-comment line whose first token is "pipx".
-    for line in level_block.splitlines():
+def test_no_level_ever_invokes_pipx():
+    """Level 1 never needed an install; level 2 no longer does either. The Action runs the
+    package from its own checkout, so a runner executes the exact bytes of the pinned tag
+    instead of the newest thing on the index — inside a job that runs a stranger's code.
+
+    The word "pipx" may still appear in an explanatory comment; what must never appear is
+    a shell invocation of it, at any level.
+    """
+    for line in _run_script().splitlines():
         stripped = line.strip()
-        assert not stripped.startswith("pipx"), f"level 1 must never invoke pipx: {line!r}"
-    assert "level1_lint.py" in level_block
-    assert "github.action_path" in level_block
+        assert not stripped.startswith("pipx"), f"the Action must never invoke pipx: {line!r}"
+        assert not stripped.startswith("pip "), f"the Action must never pip install: {line!r}"
+
+
+def test_the_sample_workflow_never_invokes_pipx_either():
+    """docs/workflows/scpe.yml is what people copy. Its trusted job used to `pipx run` the
+    package twice — once for the AI re-check stub, once to render the comment."""
+    assert "pipx" not in _WORKFLOW.read_text(encoding="utf-8")
+
+
+def test_level_1_runs_from_the_action_checkout():
+    block = _level_1_block(_run_script())
+    assert "level1_lint.py" in block
+    assert "github.action_path" in block
+
+
+def test_level_2_runs_the_package_from_the_action_checkout():
+    """The same anchor level 1 has always used. This is only possible because the package
+    is stdlib-only now (tests/test_package_is_stdlib_only.py) — with a dependency it would
+    need an install step and the guarantee would be gone."""
+    block = _level_2_block(_run_script())
+    assert "github.action_path" in block
+    assert "scpe.cli" in block
+    assert "results.json" in block
 
 
 def test_level_1_never_holds_secrets_either():
@@ -239,12 +326,16 @@ def test_level_1_reference_scripts_exist_on_disk():
     assert (_ROOT / "reference" / "level1_lint.py").is_file()
 
 
+def test_level_2_scripts_exist_on_disk_too():
+    assert (_ROOT / "scpe" / "cli.py").is_file()
+    assert (_ROOT / "reference" / "standalone" / "verify_envelope.py").is_file()
+
+
 def test_trusted_job_reads_optional_fail_message_and_comment_without_recomputing():
-    # For level=1, the FAIL message and the informational comment are both computed
-    # upstream in the untrusted action (fail_message / comment keys in results.json)
-    # — the trusted job must only ever READ them, falling back to the unchanged
-    # level-2 defaults when those keys are absent (covered by
-    # test_trusted_job_fails_the_check_and_posts_the_not_verifiable_comment).
+    # The FAIL message and the informational comment are both computed upstream in the
+    # untrusted action (fail_message / comment keys in results.json) — the trusted job
+    # must only ever READ them. Level 2 now fills both in as well, so the trusted job's
+    # fallback path is a safety net rather than the normal case.
     workflow = _load(_WORKFLOW)
     trusted = _workflow_run_job(workflow)
     blob = _dump(trusted)
@@ -275,17 +366,30 @@ def test_seal_step_never_inlines_pull_request_context_into_the_shell_script():
     assert step_env.get("HEAD_SHA") == "${{ github.event.pull_request.head.sha }}"
 
 
+def test_the_pr_body_never_becomes_an_argv_element():
+    """Env is necessary but not sufficient: `--pr-body "$PR_BODY"` would put a megabyte of
+    attacker-controlled text on the command line, visible in process listings and subject
+    to every quoting rule in between. The sealer takes the NAME of the variable and reads
+    it itself."""
+    # The env: block still DEFINES PR_BODY — that is the point. What must not appear is
+    # the expansion of its VALUE anywhere in the script.
+    assert "$PR_BODY" not in _run_script()
+
+
 def test_level_1_gate_pass_output_is_read_from_results_json_not_hardcoded():
-    # Unlike the require=false level-2 branch (which hardcodes gate-pass=true),
-    # level 1's outputs must be READ from the results.json level1_lint.py wrote,
-    # since level 1 can fail its own gate (require=true + disclosure absent).
-    action = _load(_ACTION)
-    run_script = action["runs"]["steps"][0]["run"]
-    level_block_start = run_script.find('if [ "${{ inputs.level }}" = "1" ]')
-    level_block_end = run_script.find("\n        fi", level_block_start)
-    level_block = run_script[level_block_start:level_block_end]
-    assert "results.json" in level_block
-    assert "gate_pass" in level_block
+    # Level 1's outputs must be READ from the results.json level1_lint.py wrote, since
+    # level 1 can fail its own gate (require=true + disclosure absent).
+    block = _level_1_block(_run_script())
+    assert "results.json" in block
+    assert "gate_pass" in block
+
+
+def test_gate_pass_output_is_read_from_results_json_at_level_2_too():
+    """It used to be hardcoded `true` on the require=false path, which meant the Action's
+    own output disagreed with the file it emitted."""
+    block = _level_2_block(_run_script())
+    assert "gate_pass" in block
+    assert "gate-pass=true" not in block
 
 
 # ---- level contract: 1 / 2 implemented, 3 is roadmap ------------------------
@@ -308,8 +412,7 @@ def test_level_3_is_rejected_with_a_clear_roadmap_error_not_silently_treated_as_
     # an explicit, fatal failure — never a silent fall-through into the level-2
     # envelope flow, which would give a false sense of an assurance this Action
     # does not provide.
-    action = _load(_ACTION)
-    run_script = action["runs"]["steps"][0]["run"]
+    run_script = _run_script()
     level1_start = run_script.find('if [ "${{ inputs.level }}" = "1" ]')
     level1_end = run_script.find("\nfi", level1_start)
     guard_start = run_script.find('if [ "${{ inputs.level }}" != "2" ]', level1_end)
@@ -320,53 +423,30 @@ def test_level_3_is_rejected_with_a_clear_roadmap_error_not_silently_treated_as_
     assert "exit 1" in guard_block, "an unsupported level must fail the step, not just warn"
     assert "roadmap" in guard_block.lower()
     assert "docs/LEVELS.md" in guard_block
-    # And this guard must run BEFORE any envelope/pipx work, i.e. before the
-    # require branches that follow.
-    require_pos = run_script.find('inputs.require', guard_end)
-    assert require_pos > guard_end >= 0
+    # And this guard must run BEFORE any envelope work, i.e. before the sealer.
+    assert _seal_invocation_pos(run_script) > guard_end >= 0
 
 
-def test_level_2_structurally_requires_the_disclosure_field_no_default():
-    # The claim "level 2 implies level 1 (L2 also checks disclosure)" has to be
-    # true in code, not just prose: scpe.envelope.Envelope's `provenance` field
-    # (the signed AI-disclosure) must be a required field with NO default, so a
-    # `verified` level-2 envelope can never lack the equivalent of level 1's
-    # disclosure signal.
-    import dataclasses
+def test_level_2_implies_level_1_is_enforced_by_the_gate_not_by_the_verifier():
+    """This used to be a structural property of the old envelope format: `provenance` was
+    a required dataclass field with no default, so an envelope without a disclosure could
+    not be parsed at all. The spec format has no such property — spec/manifest.schema.json
+    requires `ai_disclosure`, but that schema is descriptive/advisory only, and
+    reference/standalone/verify_envelope.py never reads the field.
 
-    from scpe.envelope import Envelope
-
-    fields = {f.name: f for f in dataclasses.fields(Envelope)}
-    assert "provenance" in fields
-    provenance_field = fields["provenance"]
-    assert provenance_field.default is dataclasses.MISSING
-    assert provenance_field.default_factory is dataclasses.MISSING  # type: ignore[comparison-overlap]
-
-    # And from_dict() must actually enforce that at parse time — an envelope
-    # missing "provenance" fails to load at all, before signature verification
-    # ever runs, exactly like a missing manifest field would.
-    from scpe.envelope import EnvelopeFormatError, from_dict
-
-    incomplete = {
-        "manifest": {
-            "protocol_version": "1",
-            "repo_url": "https://github.com/x/y",
-            "base_sha": "0" * 40,
-            "sender_public_key": "",
-            "sender_name": "x",
-            "sender_email": "x@example.com",
-            "created_at": "2026-01-01T00:00:00Z",
-        },
-        "briefing_md": "",
-        "pieces": [],
-        # "provenance" deliberately omitted
-    }
-    try:
-        from_dict(incomplete)
-        raised = False
-    except EnvelopeFormatError:
-        raised = True
-    assert raised, "an envelope missing provenance (the disclosure) must fail to parse"
+    The claim is therefore re-imposed one layer up, where policy belongs: results.json
+    carries `disclosure_present` and the gate acts on it. The behaviour itself is proved
+    end to end in tests/test_level2_implies_level1.py — including the uncomfortable half,
+    that the verifier alone WILL say `verified` for a manifest with no disclosure. All
+    that is asserted here is that the documentation still describes the mechanism that
+    actually exists."""
+    levels_doc = (_ROOT / "docs" / "LEVELS.md").read_text(encoding="utf-8")
+    assert "disclosure_present" in levels_doc, \
+        "the doc must name the field the gate actually reads"
+    # And it must not claim the verifier is what enforces it.
+    assert "required part of the signed manifest" not in levels_doc, (
+        "docs/LEVELS.md claims the verifier requires the disclosure; it does not — "
+        "the gate does. See tests/test_level2_implies_level1.py")
 
 
 def test_level_3_never_appears_as_a_working_path_only_as_documentation():
@@ -374,8 +454,7 @@ def test_level_3_never_appears_as_a_working_path_only_as_documentation():
     # verification logic — it is roadmap-only. It may appear in comments/error
     # text (already asserted above), but not as a functioning branch that does
     # anything besides fail fast.
-    action = _load(_ACTION)
-    run_script = action["runs"]["steps"][0]["run"]
+    run_script = _run_script()
     assert 'inputs.level }}" = "3"' not in run_script
     assert 'inputs.level }}" == "3"' not in run_script
 

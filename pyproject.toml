@@ -4,13 +4,13 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "scpe-protocol"
-version = "0.1.2"
-description = "SCPE: an open protocol for verifiable provenance of any digital artifact — who produced a contribution or file, and that it wasn't tampered with, verified offline with no server and no new accounts. Reference implementation + CLI (the console command is `scpe`)."
+version = "0.2.0"
+description = "SCPE: an open protocol for verifiable provenance of any digital artifact — who produced a contribution or file, and that it wasn't tampered with, verified offline with no server and no new accounts. Ships the single-file reference verifier, its producer, and a CLI (`scpe`) that seals a pull request from it."
 readme = "README.md"
 requires-python = ">=3.11"
 license = { text = "Apache-2.0" }
 authors = [{ name = "Augusto Bastos" }]
-keywords = ["github", "contributions", "open-source", "supply-chain", "provenance", "attestation", "in-toto", "dsse", "code-signing", "ssh", "verification"]
+keywords = ["github", "contributions", "open-source", "supply-chain", "provenance", "attestation", "code-signing", "ssh", "sshsig", "verification", "ci"]
 classifiers = [
     "Development Status :: 3 - Alpha",
     "Intended Audience :: Developers",
@@ -18,11 +18,18 @@ classifiers = [
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
     "Topic :: Software Development :: Version Control :: Git",
+    "Topic :: Software Development :: Quality Assurance",
     "Topic :: Security",
     "Topic :: Security :: Cryptography",
     "Environment :: Console",
 ]
-dependencies = ["cryptography>=42"]
+# Deliberately empty, and enforced by a test. Stdlib only is not minimalism for its own
+# sake: it is what lets a CI job run this package straight from a pinned checkout
+# (`PYTHONPATH=<action_path> python3 -m scpe.cli seal ...`) with no install step, so the
+# bytes that verify a pull request are the bytes of the tag the caller pinned rather than
+# whatever a package index happens to serve at that moment. Signatures are checked by
+# `ssh-keygen -Y verify` (OpenSSH >= 8.2), not by a Python crypto library.
+dependencies = []
 
 [project.urls]
 Homepage = "https://github.com/augbastos/scpe"
@@ -31,12 +38,14 @@ Documentation = "https://github.com/augbastos/scpe/blob/main/spec/SPEC.md"
 
 [project.optional-dependencies]
 dev = ["pytest>=8", "pyyaml>=6"]
-mcp = ["mcp>=1.2"]
 
 [project.scripts]
 scpe = "scpe.cli:main"
-scpe-mcp = "scpe.mcp_server:main"
 scpe-envelope = "reference.producer:main"
 
+# `reference*` is packaged alongside `scpe*` on purpose: reference/standalone/verify_envelope.py
+# is where every verdict is produced, and scpe/verify.py imports it rather than carrying a
+# second copy. Shipping one and not the other would fork the conformance surface that the
+# eighteen test vectors and the Go and Rust ports are measured against.
 [tool.setuptools.packages.find]
 include = ["scpe*", "reference*"]
