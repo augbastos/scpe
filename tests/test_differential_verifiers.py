@@ -52,8 +52,14 @@ VERIFIER_PY = ROOT / "reference" / "standalone" / "verify_envelope.py"
 VECTORS = ROOT / "spec" / "test-vectors"
 GO_DIR = ROOT / "impl" / "go"
 RUST_DIR = ROOT / "impl" / "rust"
-RUST_BIN_RELEASE = ROOT / "impl" / "rust" / "target" / "release" / "scpe-verify.exe"
-RUST_BIN_DEBUG = ROOT / "impl" / "rust" / "target" / "debug" / "scpe-verify.exe"
+# cargo appends .exe only on Windows. Hardcoding it meant that on any other platform the
+# fixture below built the Rust verifier successfully, looked for a name cargo never emits,
+# and hit its "built fine but no binary" branch -- which is a pytest.fail, not a skip, by
+# design. So every Rust case failed on Linux/macOS for a reason that had nothing to do with
+# the Rust port. Mirrors how `go_verify_bin` already picks its output name.
+_RUST_EXE = "scpe-verify.exe" if sys.platform == "win32" else "scpe-verify"
+RUST_BIN_RELEASE = ROOT / "impl" / "rust" / "target" / "release" / _RUST_EXE
+RUST_BIN_DEBUG = ROOT / "impl" / "rust" / "target" / "debug" / _RUST_EXE
 
 VALID_VECTORS = sorted(
     d for d in VECTORS.iterdir() if d.is_dir() and d.name.startswith("valid-")
@@ -236,7 +242,7 @@ def _run_go(vector_dir: Path, go_bin: Optional[Path]) -> str:
 
 def _run_rust(vector_dir: Path, rust_bin: Optional[Path]) -> str:
     if rust_bin is None:
-        pytest.skip("no built impl/rust/target/{release,debug}/scpe-verify.exe "
+        pytest.skip("no built impl/rust/target/{release,debug}/scpe-verify "
                     "-- Rust verifier not exercised")
     proc = subprocess.run(
         [str(rust_bin), str(vector_dir), "--keys", str(vector_dir / "keys"), "--json"],

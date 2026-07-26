@@ -1,0 +1,216 @@
+# CI for SCPE.
+#
+# CONTRIBUTING.md's central claim is "three implementations, one result": any change to the
+# spec or to a verifier must keep the Python reference, the Go port, and the Rust port
+# reaching the same verdict on every normative vector. Until now that claim was enforced by
+# hand and advertised by a hardcoded badge image — which stayed green through a broken test.
+# In a project whose product *is* automated verification, an unverified green is the one bug
+# that discredits everything else, so these jobs make the claim mechanical.
+#
+# Nothing here needs a secret or a write permission, so a pull request from a fork runs the
+# exact same checks with the exact same authority as a push to main.
+
+name: CI
+
+on:
+  push:
+    # Default branch only: a topic branch with an open PR is already covered by
+    # `pull_request`, and listening to both would run every commit twice for one signal.
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # The full pytest suite. The Go and Rust toolchains are installed HERE on purpose: without
+  # them tests/test_differential_verifiers.py degrades into ~56 clean SKIPs, and a green run
+  # that quietly skipped the cross-implementation check is precisely the hollow green this
+  # workflow exists to kill. The dedicated `go` and `rust` jobs below test those ports on
+  # their own terms; this one tests that they still agree with Python.
+  python:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30 # tests/test_stress_100prs.py signs ~100 real envelopes; bound it
+    strategy:
+      fail-fast: false # a 3.12-only break must not hide whether 3.11 is still fine
+      matrix:
+        # Mirrors the `Programming Language :: Python :: 3.x` classifiers in pyproject.toml.
+        # Adding a version here without adding its classifier would test support the package
+        # does not claim; keep the two in lockstep.
+        python-version: ["3.11", "3.12"]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: pip
+          cache-dependency-path: pyproject.toml
+
+      # go.mod is the single declaration of the Go version; reading it here keeps CI from
+      # drifting away from what the module says it needs.
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: impl/go/go.mod
+          cache: false # the module has zero third-party deps and no go.sum — nothing to cache
+
+      # impl/rust/Cargo.toml declares no rust-version, but Cargo.lock is a v4 lockfile, which
+      # needs Cargo >= 1.78; stable satisfies that. This action publishes branch and exact
+      # version refs (@stable, @1.78.0) rather than major tags, so it cannot be pinned the way
+      # the actions/* ones are.
+      - uses: dtolnay/rust-toolchain@stable
+
+      # All three verifiers shell out to `ssh-keygen -Y verify` (OpenSSH >= 8.2), conftest.py
+      # mints a throwaway ed25519 key per test, and scpe/sandbox.py drives `git apply`. These
+      # are hard dependencies of the suite, so assert them up front instead of letting a few
+      # hundred tests fail with a confusing error.
+      - name: Check external binaries the suite depends on
+        run: |
+          command -v ssh-keygen
+          command -v git
+          ssh -V
+
+      # Editable, with both extras. tests/test_producer_cli.py skips unless the
+      # `scpe-envelope` console script is on PATH, tests/test_action_yaml.py needs pyyaml, and
+      # one MCP test needs the `mcp` SDK — installing less silently tests less.
+      - name: Install
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[dev,mcp]"
+
+      # From the repo root: there is no pytest config anywhere, and tests/test_mcp.py imports
+      # `tests.conftest` as a package, so the root has to be what pytest prepends to sys.path.
+      - name: pytest
+        run: pytest --durations=10
+
+  # The Go port on its own terms. impl/go/internal/scpe/vectors_test.go walks
+  # spec/test-vectors/ and hard-asserts exactly 18 directories, so this needs the whole
+  # checkout rather than impl/go alone. Building first separates "the port no longer
+  # compiles" from "the port disagrees with a vector" in the log.
+  go:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: impl/go
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: impl/go/go.mod
+          cache: false
+
+      # The Go verifier is stdlib plus this one subprocess (impl/go/internal/scpe/verify.go).
+      - run: command -v ssh-keygen
+
+      - run: go build ./...
+      - run: go test ./...
+
+  # The Rust port on its own terms; impl/rust/tests/vectors.rs resolves the vectors from
+  # CARGO_MANIFEST_DIR, so it too needs the full checkout.
+  rust:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      # Cargo.lock is committed deliberately (see .gitignore) so the verifier builds from a
+      # fixed dependency set; caching on its hash is therefore exact, and cold builds of the
+      # 22-crate tree are what dominate this job's wall-clock.
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            impl/rust/target
+          key: cargo-${{ runner.os }}-${{ hashFiles('impl/rust/Cargo.lock') }}
+
+      # The Rust verifier shells out to ssh-keygen as well (impl/rust/src/scpe.rs).
+      - run: command -v ssh-keygen
+
+      # --locked enforces the reason Cargo.lock is committed: a run that would have silently
+      # resolved a different dependency version fails instead.
+      - name: cargo test
+        run: cargo test --locked
+        working-directory: impl/rust
+
+  # Runs the single-file reference verifier the way an auditor would — a bare interpreter,
+  # nothing pip-installed, no pytest, no package import — which is the only arrangement that
+  # actually proves the README's claim that reference/standalone/verify_envelope.py is
+  # stdlib-only and readable top to bottom.
+  #
+  # The committed vectors are treated as IMMUTABLE. spec/test-vectors/make_vectors.py mints
+  # fresh throwaway keys (its _key/ directory is gitignored and absent from a clean checkout)
+  # and re-signs every vector, so a regenerate-and-diff step would rewrite every signature and
+  # report a full diff on every run. The committed bytes are the conformance contract; CI
+  # verifies them, it does not reproduce them.
+  #
+  # This also covers spec/test-vectors-adversarial/. That pack's README calls its seven
+  # vectors regression guards, but no harness in any of the three languages was exercising
+  # them — the Go and Rust conformance tests hard-assert a directory count of 18 and cannot
+  # see the sibling directory, and pytest never referenced it. Their recorded statuses had
+  # only ever been confirmed by hand.
+  vectors:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - run: command -v ssh-keygen
+
+      - name: Verify every committed vector against its expected status
+        run: |
+          python - <<'PY'
+          import json, subprocess, sys
+          from pathlib import Path
+
+          VERIFIER = Path("reference/standalone/verify_envelope.py")
+          # The counts are asserted, not just iterated: the Go and Rust harnesses hard-assert
+          # 18 as well, so a vector added on one side and forgotten on the other is
+          # conformance drift and should fail here rather than pass by silently doing less.
+          SETS = [(Path("spec/test-vectors"), 18),
+                  (Path("spec/test-vectors-adversarial"), 7)]
+
+          failures = []
+          for root, expected_count in SETS:
+              vectors = sorted(d for d in root.iterdir()
+                               if d.is_dir() and (d / "expected.json").is_file())
+              if len(vectors) != expected_count:
+                  sys.exit(f"{root}: expected {expected_count} vectors, found "
+                           f"{len(vectors)}: {[d.name for d in vectors]}")
+              for vector in vectors:
+                  # --keys stands in for the forge fetch (spec/test-vectors/README.md), so
+                  # this makes zero network calls: each vector ships the public half it needs.
+                  proc = subprocess.run(
+                      [sys.executable, str(VERIFIER), str(vector),
+                       "--keys", str(vector / "keys"), "--json"],
+                      capture_output=True, text=True, timeout=60)
+                  want = json.loads(
+                      (vector / "expected.json").read_text(encoding="utf-8"))["status"]
+                  try:
+                      got = json.loads(proc.stdout)["status"]
+                  except (ValueError, KeyError, TypeError):
+                      got = None
+                  # The exit-code contract is part of the spec: 0 iff verified.
+                  ok = got == want and (proc.returncode == 0) == (want == "verified")
+                  print(f"{'ok  ' if ok else 'FAIL'} {vector.as_posix()}: "
+                        f"want={want} got={got} rc={proc.returncode}")
+                  if not ok:
+                      failures.append(f"{vector.as_posix()}: want={want} got={got} "
+                                      f"rc={proc.returncode}\n{proc.stderr[-400:]}")
+
+          if failures:
+              sys.exit("\n\n".join(failures))
+          PY

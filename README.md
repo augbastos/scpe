@@ -11,10 +11,10 @@
 </p>
 
 <p align="center">
-  <img alt="tests" src="https://img.shields.io/badge/tests-441_passing-41c257?style=flat-square&labelColor=0b0b0c">
+  <a href="https://github.com/augbastos/scpe/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/augbastos/scpe/actions/workflows/ci.yml/badge.svg"></a>
   <img alt="3 impls" src="https://img.shields.io/badge/verifiers-python%20%2B%20go%20%2B%20rust-41c257?style=flat-square&labelColor=0b0b0c">
   <img alt="spec" src="https://img.shields.io/badge/spec-scpe%2F0.1-41c257?style=flat-square&labelColor=0b0b0c">
-  <img alt="python" src="https://img.shields.io/badge/python-3.10%2B-41c257?style=flat-square&labelColor=0b0b0c">
+  <img alt="python" src="https://img.shields.io/badge/python-3.11%2B-41c257?style=flat-square&labelColor=0b0b0c">
   <img alt="license" src="https://img.shields.io/badge/code-Apache--2.0-41c257?style=flat-square&labelColor=0b0b0c">
   <img alt="status" src="https://img.shields.io/badge/v0.1-early-d29922?style=flat-square&labelColor=0b0b0c">
 </p>
