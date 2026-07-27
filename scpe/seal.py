@@ -122,8 +122,7 @@ def _bottom(tag: str) -> str:
 # ------------------------------------------------------------------------- the seal itself
 
 _BAND_COLOR = {"LOW": "2ea043", "MED": "d29922", "HIGH": "cf222e"}
-_BAND_WORD = {"LOW": "VERIFIED / LOW RISK", "MED": "REVIEW / MED RISK",
-              "HIGH": "REVIEW / HIGH RISK"}
+_BAND_WORD = {"LOW": "LOW RISK", "MED": "MED RISK", "HIGH": "HIGH RISK"}
 _BADGE_CHARS = re.compile(r"[^A-Za-z0-9._-]")
 
 # Which §8 step-4 anchor supplied the keys the verdict rests on, spelled out on the seal.
@@ -139,6 +138,31 @@ _KEY_ANCHOR = {
 }
 
 
+def _headline(band: str, verified: bool) -> str:
+    """The banner across the top of the box: identity verdict, then risk band.
+
+    The first word used to come from the RISK band alone — `LOW` rendered as
+    "VERIFIED / LOW RISK", so an unattested PR with a quiet diff was headlined VERIFIED
+    while the row three lines below it said `status  unattested`. The most prominent
+    string in the seal contradicted the verdict, and it was the one a maintainer skims.
+    The two dimensions are now spelled separately: who signed it (or that nobody did),
+    and how the diff scored. Risk never speaks for identity."""
+    return ("VERIFIED" if verified else "UNVERIFIED") + " / " + _BAND_WORD.get(band, "RISK n/a")
+
+
+def _tests_words(tests_ok: bool, tests_ran: bool) -> tuple:
+    """(badge, badge colour, prose, box marker) for the three real states.
+
+    "no test runner detected" is NOT a failure — nothing ran, so nothing failed. Painting
+    it red like a broken suite reads as "this contribution breaks the build" on every repo
+    without a runner the Action recognizes, which is most of them."""
+    if not tests_ran:
+        return ("tests_none", "8b949e", "no tests run", "[none]")
+    if tests_ok:
+        return ("tests_green", "2ea043", "tests passed", "[OK]")
+    return ("tests_FAILED", "cf222e", "tests FAILED", "[FAILED]")
+
+
 def _badge_text(text: str, fallback: str) -> str:
     """A shields.io path segment. Stricter than `_safe`: the value lands inside a URL inside
     a markdown image, so anything outside [A-Za-z0-9._-] is dropped rather than replaced."""
@@ -146,7 +170,7 @@ def _badge_text(text: str, fallback: str) -> str:
     return out or fallback
 
 
-def pr_pill(band: str, login: str, verified: bool, tests_ok: bool) -> str:
+def pr_pill(band: str, login: str, verified: bool, tests_ok: bool, tests_ran: bool = True) -> str:
     """The colored glance line. Each badge reflects REAL state: the identity badge says
     'verified' (green) ONLY when the signature actually verified, else 'UNVERIFIED'
     (red) — it describes the person, never the code's safety (that is the risk badge)."""
@@ -154,24 +178,24 @@ def pr_pill(band: str, login: str, verified: bool, tests_ok: bool) -> str:
     band_color = _BAND_COLOR.get(band, "8b949e")
     who = _badge_text(login, "unknown")
     id_txt, id_color = ("verified", "2ea043") if verified else ("UNVERIFIED", "cf222e")
-    tests_txt, t_color = ("tests_green", "2ea043") if tests_ok else ("tests_FAILED", "cf222e")
+    tests_txt, t_color, _, _ = _tests_words(tests_ok, tests_ran)
     return (f"### scpe "
             f"![](https://img.shields.io/badge/{band}_RISK-{band_color}) "
             f"![](https://img.shields.io/badge/@{who}-{id_txt}-{id_color}) "
             f"![](https://img.shields.io/badge/{tests_txt}-{t_color})")
 
 
-def pr_summary_line(band: str, verified: bool, tests_ok: bool) -> str:
+def pr_summary_line(band: str, verified: bool, tests_ok: bool, tests_ran: bool = True) -> str:
     """The one-line glance a maintainer reads in 5 seconds — the whole verdict, no scrolling.
     The full box lives behind a <details> in the comment."""
     idc = "identity verified" if verified else "identity UNVERIFIED"
-    tc = "tests passed" if tests_ok else "tests FAILED"
+    _, _, tc, _ = _tests_words(tests_ok, tests_ran)
     return f"**{idc}** - **{tc}** - **risk {_safe(band) or 'n/a'}** (rule-based, reproducible)"
 
 
 def pr_seal(*, login, verified, profile, band, flags, added, removed, files,
             tests_ok, tests_summary, provenance, hook="", rules_checked=RULE_COUNT,
-            key_source=None, status="") -> str:
+            key_source=None, status="", tests_ran=True) -> str:
     """Render the fixed-width seal box. `profile` is the advisory SPEC §13 label, surfaced
     verbatim and never dispatched on; `key_source` is the §8 step-4 anchor, rendered on its
     own row because the verdict word alone cannot tell a forge-backed pass from a
@@ -182,7 +206,7 @@ def pr_seal(*, login, verified, profile, band, flags, added, removed, files,
     band = band if isinstance(band, str) else ""
     flags = [f for f in flags if isinstance(f, dict)] if isinstance(flags, list) else []
     files = files if isinstance(files, (list, tuple)) else []
-    lines = [_top(_BAND_WORD.get(band, "REVIEW")), _row()]
+    lines = [_top(_headline(band, verified)), _row()]
     if band == "HIGH" and flags:
         f = flags[0]
         lines.append(_row(f"!! adds {_safe(f.get('pattern'), 20)} in "
@@ -202,7 +226,7 @@ def pr_seal(*, login, verified, profile, band, flags, added, removed, files,
         _row(f"contributor  {who}"),
         _row(f"change       +{added} / -{removed},  {len(files)} files"),
         _row(f"risk         {_safe(band, 8) or 'n/a'}   ({risk_detail})"),
-        _row(f"tests        {_safe(tests_summary, 30)}   " + ("[OK]" if tests_ok else "[FAILED]")),
+        _row(f"tests        {_safe(tests_summary, 30)}   " + _tests_words(tests_ok, tests_ran)[3]),
         _row(f"made with    {_safe(provenance, 44) or 'undisclosed'}"),
     ]
     anchor, anchor_more = _KEY_ANCHOR.get(str(key_source), ("", ""))
@@ -242,6 +266,11 @@ def render_comment(results: dict) -> str:
     tests = results.get("tests")
     tests = tests if isinstance(tests, dict) else {}
     tests_ok = bool(tests.get("ok"))
+    # Absent `ran` means a results.json from an older tag, which had no such key and never
+    # distinguished "nothing ran" from "the suite failed". Defaulting to True keeps that
+    # blob rendering exactly as it did rather than silently downgrading a real failure to
+    # "no tests run" — the honest reading of a field that was not recorded.
+    tests_ran = bool(tests.get("ran", True))
     login = results.get("login") or results.get("subject") or ""
     login = login if isinstance(login, str) else ""
     verified = bool(results.get("verified"))
@@ -252,15 +281,15 @@ def render_comment(results: dict) -> str:
         profile=results.get("profile") or "",
         band=band, flags=results.get("flags") or [],
         added=results.get("added", 0), removed=results.get("removed", 0),
-        files=results.get("files") or [], tests_ok=tests_ok,
+        files=results.get("files") or [], tests_ok=tests_ok, tests_ran=tests_ran,
         tests_summary=tests.get("summary", "not run"),
         provenance=results.get("provenance", ""), hook=results.get("hook", ""),
         rules_checked=results.get("rules_checked") or RULE_COUNT,
         key_source=results.get("key_source"), status=results.get("status", ""))
     fence = _fence_for(box)
     comment = (
-        pr_pill(band, login, verified, tests_ok) + "\n\n"
-        + pr_summary_line(band, verified, tests_ok)
+        pr_pill(band, login, verified, tests_ok, tests_ran) + "\n\n"
+        + pr_summary_line(band, verified, tests_ok, tests_ran)
         + f"\n\n<details><summary>full report</summary>\n\n{fence}\n" + box + f"\n{fence}\n\n"
         + "Risk is a published, weightless rule set and an Action-layer aid, not part of "
         + "the protocol — reproduce every band with `scpe seal --json`.\n</details>")

@@ -107,3 +107,53 @@ def test_obfuscation_raises_risk_instead_of_evading():
     r = seal.risk_band(diff)
     assert r["band"] != "LOW"
     assert any(f["pattern"] == "chr" for f in r["flags"])
+
+
+# --- the seal must not overstate itself (live-run regressions, 2026-07-27) -----------
+
+def test_headline_never_says_verified_for_an_unattested_contribution():
+    """FIX, found on a live PR: the banner's first word came from the RISK band, so `LOW`
+    printed "VERIFIED / LOW RISK" across the top of a seal whose own rows read
+    `UNVERIFIED` and `status  unattested`. The most prominent line in the comment
+    contradicted the verdict. Identity and risk are separate axes and now render as two."""
+    unsigned = seal.pr_seal(login="", verified=False, profile="", band="LOW", flags=[],
+                            added=10, removed=0, files=["f.py"], tests_ok=True,
+                            tests_summary="3 passed", provenance="", status="unattested")
+    assert "UNVERIFIED / LOW RISK" in unsigned
+    assert "VERIFIED / LOW RISK" not in unsigned.replace("UNVERIFIED / LOW RISK", "")
+    signed = seal.pr_seal(login="augbastos", verified=True, profile="", band="LOW", flags=[],
+                          added=10, removed=0, files=["f.py"], tests_ok=True,
+                          tests_summary="3 passed", provenance="")
+    assert "VERIFIED / LOW RISK" in signed
+    # A high-risk diff still says so, and identity still speaks for itself.
+    risky = seal.pr_seal(login="", verified=False, profile="", band="HIGH",
+                         flags=[{"pattern": "exec", "file": "x.py", "line": 3}],
+                         added=1, removed=0, files=["x.py"], tests_ok=True,
+                         tests_summary="3 passed", provenance="")
+    assert "UNVERIFIED / HIGH RISK" in risky
+
+
+def test_no_test_runner_is_not_reported_as_a_failure():
+    """FIX, same live PR: `tests_ok=False` covered both "the suite failed" and "there is no
+    suite", so every repo without a recognized runner got a red tests_FAILED badge — a
+    claim the Action cannot support. Nothing ran, so nothing failed."""
+    none_ran = seal.render_comment({
+        "band": "LOW", "verified": False, "status": "unattested",
+        "tests": {"ran": False, "ok": False, "summary": "no test runner detected"}})
+    assert "tests_none" in none_ran and "no tests run" in none_ran
+    assert "FAILED" not in none_ran
+    assert "[none]" in none_ran
+
+    really_failed = seal.render_comment({
+        "band": "LOW", "verified": False,
+        "tests": {"ran": True, "ok": False, "summary": "2 failed"}})
+    assert "tests_FAILED" in really_failed and "tests FAILED" in really_failed
+    assert "[FAILED]" in really_failed
+
+
+def test_results_json_without_a_ran_key_still_renders_as_before():
+    """An older pinned tag wrote no `ran`. Defaulting it to True keeps a genuine failure
+    red instead of laundering it into "no tests run"."""
+    old = seal.render_comment({"band": "LOW", "verified": True,
+                               "tests": {"ok": False, "summary": "1 failed"}})
+    assert "tests_FAILED" in old
