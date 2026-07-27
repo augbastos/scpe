@@ -60,11 +60,33 @@ will not be treated as an advisory.
 
 ## Supported versions
 
-| Version | Supported |
-|---|---|
-| `v0.2.1` and later `0.2.x` | yes |
-| `v0.2` | no — superseded; the fixes ship as new tags, tags are never moved |
-| `v0.1.x` | **no.** Its level-2 path verifies an envelope format that is not in `spec/`. See [docs/MIGRATION.md](docs/MIGRATION.md). |
+| Version | Supported | Notes |
+|---|---|---|
+| `v0.2.2` and later `0.2.x` | yes | |
+| `v0.2.1` | **no — known flaw** | Accepts a valid envelope replayed from another repository. See below. |
+| `v0.2` | **no — known flaw** | Same, plus a seal that reads `VERIFIED` on unattested pull requests. |
+| `v0.1.x` | **no** | Its level-2 path verifies an envelope format that is not in `spec/`. See [docs/MIGRATION.md](docs/MIGRATION.md). |
+
+### Known flaw in `v0.2.1` and earlier — fixed in `v0.2.2`
+
+`subject.target.repo` and `subject.target.base_sha` are signed, but nothing compared them
+with the repository the check was running in. A genuine attestation lifted from a public pull
+request and presented on a **different** repository — one whose diff normalizes to the same
+bytes — verified: `status: verified`, `key_source: forge`, `gate_pass: true`, under the
+original signer's name, with `require: "true"` set.
+
+The signature and the digest were never the weak part. The envelope was simply never checked
+against where it was being shown.
+
+**If you pin `v0.2.1` or `v0.2`, move to `v0.2.2`.** Nothing else is needed: no key rotation,
+no re-signing, no change to any envelope you have already produced. `v0.2.2` also refuses a
+manifest whose `contributor.key_fingerprint` names a key other than the one that signed it,
+which earlier versions reported without checking.
+
+Found by an external reviewer reading the repository cold, before any adoption. Reproduced,
+fixed, and pinned by
+`spec/test-vectors-adversarial/fingerprint-names-another-key` and
+`tests/test_context_binding.py`.
 
 Every tag is immutable. A fix arrives as a new tag you adopt by editing your pin, never as
 a silent change under one you already wrote.

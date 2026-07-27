@@ -13,4 +13,4 @@ from a checkout (`PYTHONPATH=<action_path> python3 -m scpe.cli`), so a CI job ve
 with the exact bytes of the tag it pinned rather than whatever a package index serves
 at that moment.
 """
-__version__ = "0.2.1"
+__version__ = "0.2.2"

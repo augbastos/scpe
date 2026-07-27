@@ -39,7 +39,7 @@ That resolves `scpe-protocol` from PyPI **on every run, with no version constrai
 unpinned dependency hiding behind a pinned tag. That pin has had two distinct failure modes,
 and it is now in the second one.
 
-**Today.** PyPI serves `0.2.1`, so the unconstrained resolve picks up `0.2.x`, where
+**Today.** PyPI serves `0.2.2`, so the unconstrained resolve picks up `0.2.x`, where
 `scpe seal` takes `--envelope` as a flag and accepts no positional argument. The `v0.1.x`
 invocation is rejected by the argument parser and the step exits non-zero. **A workflow nobody
 edited is already red.** That is the good failure: it is loud, and it points at the pin.
@@ -59,7 +59,7 @@ body" (the spec's §9 transport), not "check nothing". If your workflow sets `en
 explicitly, drop the line unless you really do commit an envelope file.
 
 ```yaml
-- uses: augbastos/scpe@v0.2.1
+- uses: augbastos/scpe@v0.2.2
   with:
     level: "1"        # 1 = disclosure lint · 2 = signed envelope required
     require: "true"   # fail the check on anything not verifiable
@@ -102,9 +102,21 @@ verified; a tag that can be re-pointed reintroduces exactly that, one layer up. 
 external adoption to protect, "the bytes you pinned are the bytes that ran" is worth more than
 picking up patches automatically.
 
-The cost is that a fix does not reach you on its own. Either watch the repository's releases, or
-let Dependabot's `github-actions` ecosystem open the bump as a pull request you can read before
-merging.
+The cost is that a fix does not reach you on its own — **including a security fix**. `v0.2.2`
+exists because `v0.2.1` accepted a valid envelope replayed from a different repository, and a
+workflow still pinned at `v0.2.1` keeps accepting it, silently, for as long as the pin stands.
+That is the price of "the bytes you pinned are the bytes that ran", and it is paid on purpose.
+
+So do one of these, rather than assuming a patch will arrive:
+
+- watch the repository's releases, or
+- let Dependabot's `github-actions` ecosystem open the bump as a pull request you read before
+  merging.
+
+And read the [CHANGELOG](../CHANGELOG.md) entry before you merge one. A patch tag here can
+refuse a contribution the previous tag accepted, when the previous tag was wrong to accept it.
+`0.2.2` does exactly that. The protocol number is not what moved: `spec_version` is `scpe/0.1`
+across the whole `0.2.x` line, and every envelope that verified still verifies.
 
 ---
 
@@ -138,7 +150,7 @@ Nothing about your key changes. It is the same SSH key already on your git host,
 account that publishes no files, so pip reports no matching distribution — it will not silently
 install someone else's code, but it will not install this one either.
 
-The zero-install paths (`pipx run`, `uvx`) resolve to the newest release, which is `0.2.1`.
+The zero-install paths (`pipx run`, `uvx`) resolve to the newest release, which is `0.2.2`.
 Constrain the version anyway, so a later release cannot silently change what decides your pull
 requests:
 

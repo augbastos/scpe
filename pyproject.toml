@@ -7,7 +7,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "scpe-protocol"
-version = "0.2.1"
+version = "0.2.2"
 description = "SCPE: an open protocol for verifiable provenance of any digital artifact — who signed a contribution or file, what they declared about AI use, and that nothing was tampered with, verified offline with no server and no new accounts. Ships the single-file reference verifier, its producer, and a CLI (`scpe`) that seals a pull request from it."
 readme = "README.md"
 requires-python = ">=3.11"

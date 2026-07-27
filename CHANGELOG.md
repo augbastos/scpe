@@ -14,13 +14,20 @@ make with this project:
 | **Release** — this file, the PyPI version | `0.2.0` | anything in this repository ships |
 | **Action tag** — what a workflow pins | `augbastos/scpe@v0.2` | never — each tag is immutable and a new release gets a new tag |
 
-`0.2.0` does **not** change the protocol. `spec_version` is still `scpe/0.1`, the signing
-namespace is still `scpe/0.1`, and every envelope that verified against SPEC.md before this
-release still verifies, byte for byte. What changed is which format the *tooling* reads.
+No `0.2.x` release changes the protocol. `spec_version` is `scpe/0.1` throughout, the signing
+namespace is `scpe/0.1`, and every envelope that verified against SPEC.md still verifies, byte
+for byte. What has changed across the line is what the *tooling* reads and what it refuses.
+
+A patch number can still change behaviour, and `0.2.2` does: it rejects contributions `0.2.1`
+accepted, because `0.2.1` accepted some it should not have. "Patch" here means the wire format
+is untouched — not that nothing moved. Read the entry before bumping a pin.
 
 ---
 
-## [Unreleased]
+## [0.2.2] — 2026-07-27
+
+**Security release. If you pin `v0.2.1` or `v0.2`, move to `v0.2.2`.** Everything below was
+already true of those tags; a tag is never moved, so the fix exists only as a new one.
 
 Two guarantees the specification described and no implementation enforced. Both were found
 by an outside reviewer reading the repository cold, and both were reproduced before being
