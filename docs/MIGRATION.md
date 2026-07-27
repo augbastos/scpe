@@ -53,9 +53,10 @@ nobody edited turns red on publication day.
 
 ### What to do
 
-Move the pin, and take the `envelope` input with you — its default changed from
-`.scpe/contribution.cc.zip` to empty, and empty now means "read the attestation from the pull
-request body" (the spec's §9 transport), not "check nothing".
+Move the pin, and take the `envelope` input with you — its default changed from a fixed path
+to a committed zip to empty, and empty now means "read the attestation from the pull request
+body" (the spec's §9 transport), not "check nothing". If your workflow sets `envelope:`
+explicitly, drop the line unless you really do commit an envelope file.
 
 ```yaml
 - uses: augbastos/scpe@v0.2

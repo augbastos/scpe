@@ -74,9 +74,9 @@ story is not the usual one.
   does.) Level 2 now runs `PYTHONPATH=<action_path> python3 -m scpe.cli seal …` from that same
   checkout, so the bytes that decide a merge are the bytes of the tag you pinned.
 - **`scpe seal` takes `--envelope` as a flag**, not as a positional argument, and the Action's
-  `envelope` input now defaults to empty rather than `.scpe/contribution.cc.zip`. Empty selects
-  the spec's §9 transport: the attestation rides in the PR description and no binary blob lands
-  in history.
+  `envelope` input now defaults to empty rather than to a fixed path to a committed zip. Empty
+  selects the spec's §9 transport: the attestation rides in the PR description and no binary
+  blob lands in history.
 - **`scpe verify` is a pass-through, not a wrapper.** It forwards argv to
   `reference/standalone/verify_envelope.py`'s own `main()`, so its output bytes and exit code
   are the verifier's rather than a reformatting of them. Parity is by construction. Under

@@ -173,8 +173,8 @@ def _read_pubkey(key_path: Path) -> str:
     if not pub.exists():
         raise ProducerError(
             f"no signing key at {pub} — create one with "
-            f'ssh-keygen -t ed25519 -f {key_path} -N "" and register it: '
-            f"gh ssh-key add {pub} --type signing --title scpe")
+            f'ssh-keygen -t ed25519 -f {key_path} -N "" and publish it: '
+            f"gh ssh-key add {pub} --title scpe")
     parts = pub.read_text(encoding="utf-8").strip().split()
     if len(parts) < 2:
         raise ProducerError(f"malformed public key at {pub}")
@@ -188,6 +188,13 @@ def _published_keys(login: str, *, timeout: int = 15) -> list[str]:
     packing an envelope that the owner would only fail to verify later. The authoritative
     key resolution lives in the verifier (SPEC §8 step 4), which is stricter — fixed
     provider table, no redirects, size cap, and it reports the anchor it used.
+
+    One thing this endpoint does NOT list, and the reason the check exists: a key added to
+    GitHub as a *signing* key (`gh ssh-key add --type signing`) never appears at
+    `<login>.keys`, which publishes authentication keys only. SSHSIG does not care how the
+    forge filed the key, but the verifier can only fetch what the forge publishes — so a
+    key filed only under signing verifies nowhere, and the failure lands on the reviewer's
+    side as `identity-unverifiable` long after the envelope was made.
     """
     req = urllib.request.Request(_GITHUB_KEYS_URL.format(login=urllib.parse.quote(login, safe="")),
                                  headers={"User-Agent": "scpe-envelope"})
@@ -220,8 +227,10 @@ def resolve_login_and_key(login: str | None, key: str | None) -> tuple[str, Path
     pubkey = _read_pubkey(kp)
     if pubkey not in _published_keys(resolved_login):
         raise ProducerError(
-            f"signing key {kp}.pub is not published on github.com/{resolved_login} — add it: "
-            f"gh ssh-key add {kp}.pub --type signing --title scpe")
+            f"signing key {kp}.pub is not published at github.com/{resolved_login}.keys — "
+            f"add it: gh ssh-key add {kp}.pub --title scpe\n"
+            "Note: it must be an authentication key. `--type signing` files the key where "
+            "only GitHub's API can see it, and the verifier reads the published .keys list.")
     return resolved_login, kp
 
 

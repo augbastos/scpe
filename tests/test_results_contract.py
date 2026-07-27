@@ -99,7 +99,7 @@ def test_a_format_b_zip_from_an_old_tag_is_unattested_not_a_crash(tmp_path):
     canonical re-serialization). A repository pinned to an old Action tag still commits one
     and still points `envelope:` at it. That input has to come back as `unattested` and
     exit 0 — a stack trace here would turn every one of those PRs red overnight."""
-    legacy = tmp_path / "contribution.cc.zip"
+    legacy = tmp_path / "legacy-envelope.zip"
     buf = io.BytesIO()
     with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
         zf.writestr("envelope.json", '{"manifest": {"protocol_version": "1"}}')
