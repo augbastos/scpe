@@ -16,7 +16,7 @@
   <img alt="spec" src="https://img.shields.io/badge/spec-scpe%2F0.1-41c257?style=flat-square&labelColor=0b0b0c">
   <img alt="python" src="https://img.shields.io/badge/python-3.11%2B-41c257?style=flat-square&labelColor=0b0b0c">
   <img alt="license" src="https://img.shields.io/badge/code-Apache--2.0-41c257?style=flat-square&labelColor=0b0b0c">
-  <img alt="status" src="https://img.shields.io/badge/v0.2-early-d29922?style=flat-square&labelColor=0b0b0c">
+  <img alt="status" src="https://img.shields.io/badge/v0.2.1-early-d29922?style=flat-square&labelColor=0b0b0c">
 </p>
 
 <p align="center">
@@ -166,18 +166,20 @@ Add a workflow that verifies every PR and posts a seal. Set `require` to gate me
 ```yaml
 # .github/workflows/scpe.yml — the step. Copy BOTH files from docs/workflows/ for the
 # fork-safe version: scpe.yml (verify) and its companion scpe-seal.yml (post the seal).
-- uses: augbastos/scpe@v0.2
+- uses: augbastos/scpe@v0.2.1
   with:
     level: "1"        # 1 = disclosure lint · 2 = signed envelope required
     require: "true"   # fail the check on anything not verifiable
 ```
 
-Pin the exact tag while the protocol is pre-1.0. `v0.2` is an **immutable alias** — it points at
-one commit and is never moved, so a fix arrives as a new tag you adopt by editing the pin, not as
-a silent change under the one you already wrote. It is also the first release in which the Action
-verifies the `scpe/0.1` envelope itself; `v0.1.x` verified a different, now-removed format, so
-upgrading from it is a behaviour change and not a patch — [docs/MIGRATION.md](docs/MIGRATION.md)
-has the steps.
+Pin the exact tag while the protocol is pre-1.0. Every tag here is an **immutable alias** — it
+points at one commit and is never moved, so a fix arrives as a new tag you adopt by editing the
+pin, not as a silent change under the one you already wrote. `v0.2.1` is that in practice: `v0.2`
+shipped a seal banner that read `VERIFIED` on unattested PRs and a workflow template GitHub
+refuses to register, and both were fixed by publishing a new tag rather than by moving the old
+one. The `v0.2` line is also the first in which the Action verifies the `scpe/0.1` envelope
+itself; `v0.1.x` verified a different, now-removed format, so upgrading from it is a behaviour
+change and not a patch — [docs/MIGRATION.md](docs/MIGRATION.md) has the steps.
 
 The Action uses a fork-safe two-job split, and the two jobs live in **two files**: the untrusted
 job in `scpe.yml` (which runs contributor code) holds no secrets, and only the trusted follow-up
@@ -244,7 +246,7 @@ single machine — not a formal benchmark suite.
 
 ## Status
 
-**v0.2 — early.** This is a specification plus a reference implementation (a single-file
+**v0.2.1 — early.** This is a specification plus a reference implementation (a single-file
 verifier, a producer, and a maintainer-side Action). The full test suite — including a 100-PR
 stress proof and a local end-to-end — runs on every push; the CI badge above is its live
 result. Two more independent verifiers, in Go and Rust, reach the same verdict as the Python

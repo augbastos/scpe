@@ -59,7 +59,7 @@ body" (the spec's §9 transport), not "check nothing". If your workflow sets `en
 explicitly, drop the line unless you really do commit an envelope file.
 
 ```yaml
-- uses: augbastos/scpe@v0.2
+- uses: augbastos/scpe@v0.2.1
   with:
     level: "1"        # 1 = disclosure lint · 2 = signed envelope required
     require: "true"   # fail the check on anything not verifiable

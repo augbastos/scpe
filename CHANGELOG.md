@@ -20,9 +20,43 @@ release still verifies, byte for byte. What changed is which format the *tooling
 
 ---
 
-## [0.2.0] — unreleased
+## [0.2.1] — 2026-07-27
 
-*(dated on publication — the git tag and the PyPI release are not out yet)*
+Two fixes found by installing the Action on a real repository and opening a real pull
+request. Neither was reachable from the test suite — the YAML is valid and the failures only
+exist on GitHub's side — and both shipped in `v0.2`.
+
+### Fixed
+
+- **The workflow template in `docs/workflows/` could never register.** It named its own
+  workflow in `workflow_run.workflows`. GitHub refuses to parse such a file: it displays the
+  file path where the workflow name belongs, and every run fails at the workflow level with
+  zero jobs and *"This run likely failed because of a workflow file issue"*. The fork-safe
+  pattern the README told maintainers to copy therefore could not run at all. It is now two
+  files — `scpe.yml` (untrusted `verify` on `pull_request`) and `scpe-seal.yml` (trusted
+  `seal` on `workflow_run`), the standard GitHub pattern. **If you copied the single-file
+  template, replace it with both.**
+- **The seal claimed `VERIFIED` on unattested contributions.** The banner's first word came
+  from the risk band alone, so a quiet diff with no attestation was headlined
+  `VERIFIED / LOW RISK` while the rows below it read `UNVERIFIED` and `status  unattested`.
+  Identity and risk now render as separate axes: `UNVERIFIED / LOW RISK`.
+- **"No test runner detected" was reported as a test failure.** One boolean covered both
+  "the suite failed" and "there is no suite", so every repository without a runner the Action
+  recognizes got a red `tests_FAILED` badge — a claim the Action cannot support. That state
+  is now neutral: `tests_none` / "no tests run" / `[none]`. A `results.json` written by an
+  older tag (no `ran` key) still renders a genuine failure as a failure.
+
+No protocol change: `spec_version` is still `scpe/0.1`, the signing namespace is unchanged,
+and every envelope that verified under `0.2.0` verifies identically. `action.yml` itself is
+byte-identical to `v0.2`.
+
+`v0.2` was **not** moved — it is an immutable alias, as documented. The fixes ship as
+`v0.2.1`, adopted by editing your pin. A workflow still pinned to `@v0.2` keeps verifying
+correctly; it renders the misleading banner and ships the unusable template.
+
+---
+
+## [0.2.0] — 2026-07-27
 
 The installable package carried a second, undocumented envelope format, and the Marketplace
 Action verified **that** one instead of the one in SPEC.md. This release deletes it, leaving a
