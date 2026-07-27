@@ -209,7 +209,7 @@ passing all eighteen does not by itself show that the `key_source` MUST is honou
 checked by inspection. Every vector ships its own `keys` file so the suite runs offline, and no
 vector reaches the `forge` anchor.
 
-**Cost** — measured on the Python reference (Ryzen 5 5600H, Python 3.14, `local` provider):
+**Cost**
 
 | | Measured |
 |---|---|
