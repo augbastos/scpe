@@ -190,7 +190,7 @@ def _published_keys(login: str, *, timeout: int = 15) -> list[str]:
     provider table, no redirects, size cap, and it reports the anchor it used.
     """
     req = urllib.request.Request(_GITHUB_KEYS_URL.format(login=urllib.parse.quote(login, safe="")),
-                                 headers={"User-Agent": "scpe-producer"})
+                                 headers={"User-Agent": "scpe-envelope"})
     try:
         with urllib.request.urlopen(req, timeout=timeout) as resp:
             body = resp.read(_MAX_KEYS_BYTES).decode("utf-8", "replace")
@@ -634,8 +634,14 @@ def _cmd_submit(args) -> int:
 
 
 def main(argv: list[str] | None = None) -> int:
-    ap = argparse.ArgumentParser(prog="scpe-producer",
-        description="SCPE scpe/0.1 reference producer (pack / attest / verify / submit)")
+    # prog is the console script declared in pyproject, not this module's name: --help is
+    # read by someone who typed `scpe-envelope`, and a usage line naming a command that is
+    # not on their PATH sends them hunting for a binary that does not exist. The subcommand
+    # list below is the full one for the same reason — `pack-artifact` is otherwise invisible
+    # until you already know to ask for it.
+    ap = argparse.ArgumentParser(prog="scpe-envelope",
+        description="SCPE scpe/0.1 reference producer "
+                    "(pack / pack-artifact / attest / verify / submit)")
     sub = ap.add_subparsers(dest="cmd", required=True)
 
     pk = sub.add_parser("pack", help="compute a diff, sign the manifest, emit an envelope zip")

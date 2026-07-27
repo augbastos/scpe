@@ -92,7 +92,9 @@ throwaway key at `../test-vectors/_key/` — no second key, no forked logic. Tha
 stay out of the repo even when they are throwaway. It is minted by `make_vectors.py`, so a
 fresh clone must run that before regenerating here. Verifying the vectors needs no key at
 all — each directory carries the public half it needs.
-`verify_all.py` only drives the Python reference verifier; the Go/Rust cross-checks recorded
-in each `expected.json` were run manually (`go build ./cmd/scpe-verify` /
-`cargo build --release`, then invoked directly against each vector directory), since these
-vectors are deliberately outside both languages' hard-coded 18-vector test discovery.
+`verify_all.py` only drives the Python reference verifier — it is the quick local loop. The
+cross-implementation check is no longer manual: the `adversarial` job in
+`.github/workflows/ci.yml` builds all three verifiers and runs every vector here against each
+of them on push and on pull request, comparing status and exit code. It exists as a separate
+job because these vectors sit outside both languages' hard-coded 18-vector discovery, so
+neither `go test` nor `cargo test` would ever reach them.

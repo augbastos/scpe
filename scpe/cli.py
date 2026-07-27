@@ -8,8 +8,13 @@
 `verify` is deliberately a pass-through and not a wrapper: it forwards argv to
 reference/standalone/verify_envelope.py's own `main()`, so its output bytes and its exit
 code are the verifier's, not a reformatting of them. It exists only to give a zero-install
-path (`pipx run --spec scpe-protocol scpe verify`) to someone who does not want to clone
-the repo — running the single file directly stays the canonical, and cheaper, way.
+path (`pipx run --spec 'scpe-protocol>=0.2' scpe verify`) to someone who does not want to
+clone the repo — running the single file directly stays the canonical, and cheaper, way.
+
+Pin the floor. An unconstrained `--spec scpe-protocol` resolves to whatever is newest on
+PyPI, and 0.1.2 is a different program: it carries the removed agent layer and verifies an
+envelope format this repository no longer produces. It would not error — it would answer
+about the wrong thing.
 
 Stdlib only. That is what lets a CI job run this straight from a checkout
 (`PYTHONPATH=<action_path> python3 -m scpe.cli seal ...`) with no install step, so the

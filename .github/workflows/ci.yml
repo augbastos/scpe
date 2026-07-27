@@ -154,11 +154,10 @@ jobs:
   # report a full diff on every run. The committed bytes are the conformance contract; CI
   # verifies them, it does not reproduce them.
   #
-  # This also covers spec/test-vectors-adversarial/. That pack's README calls its seven
-  # vectors regression guards, but no harness in any of the three languages was exercising
-  # them — the Go and Rust conformance tests hard-assert a directory count of 18 and cannot
-  # see the sibling directory, and pytest never referenced it. Their recorded statuses had
-  # only ever been confirmed by hand.
+  # Scope is the 18 normative vectors, the same count impl/go/internal/scpe/vectors_test.go
+  # and impl/rust/tests/vectors.rs hard-assert. The seven adversarial vectors get the
+  # `adversarial` job below, which runs them against all three implementations; repeating
+  # their Python leg here would spend a second run to produce the same one signal.
   vectors:
     runs-on: ubuntu-latest
     timeout-minutes: 10
@@ -171,46 +170,160 @@ jobs:
 
       - run: command -v ssh-keygen
 
-      - name: Verify every committed vector against its expected status
+      - name: Verify every normative vector against its expected status
         run: |
           python - <<'PY'
           import json, subprocess, sys
           from pathlib import Path
 
           VERIFIER = Path("reference/standalone/verify_envelope.py")
-          # The counts are asserted, not just iterated: the Go and Rust harnesses hard-assert
+          ROOT = Path("spec/test-vectors")
+          # The count is asserted, not just iterated: the Go and Rust harnesses hard-assert
           # 18 as well, so a vector added on one side and forgotten on the other is
           # conformance drift and should fail here rather than pass by silently doing less.
-          SETS = [(Path("spec/test-vectors"), 18),
-                  (Path("spec/test-vectors-adversarial"), 7)]
+          EXPECTED_COUNT = 18
 
           failures = []
-          for root, expected_count in SETS:
-              vectors = sorted(d for d in root.iterdir()
-                               if d.is_dir() and (d / "expected.json").is_file())
-              if len(vectors) != expected_count:
-                  sys.exit(f"{root}: expected {expected_count} vectors, found "
-                           f"{len(vectors)}: {[d.name for d in vectors]}")
-              for vector in vectors:
-                  # --keys stands in for the forge fetch (spec/test-vectors/README.md), so
-                  # this makes zero network calls: each vector ships the public half it needs.
+          vectors = sorted(d for d in ROOT.iterdir()
+                           if d.is_dir() and (d / "expected.json").is_file())
+          if len(vectors) != EXPECTED_COUNT:
+              sys.exit(f"{ROOT}: expected {EXPECTED_COUNT} vectors, found "
+                       f"{len(vectors)}: {[d.name for d in vectors]}")
+          for vector in vectors:
+              # --keys stands in for the forge fetch (spec/test-vectors/README.md), so this
+              # makes zero network calls: each vector ships the public half it needs.
+              proc = subprocess.run(
+                  [sys.executable, str(VERIFIER), str(vector),
+                   "--keys", str(vector / "keys"), "--json"],
+                  capture_output=True, text=True, timeout=60)
+              want = json.loads(
+                  (vector / "expected.json").read_text(encoding="utf-8"))["status"]
+              try:
+                  got = json.loads(proc.stdout)["status"]
+              except (ValueError, KeyError, TypeError):
+                  got = None
+              # The exit-code contract is part of the spec: 0 iff verified.
+              ok = got == want and (proc.returncode == 0) == (want == "verified")
+              print(f"{'ok  ' if ok else 'FAIL'} {vector.as_posix()}: "
+                    f"want={want} got={got} rc={proc.returncode}")
+              if not ok:
+                  failures.append(f"{vector.as_posix()}: want={want} got={got} "
+                                  f"rc={proc.returncode}\n{proc.stderr[-400:]}")
+
+          if failures:
+              sys.exit("\n\n".join(failures))
+          PY
+
+  # The seven adversarial vectors, against all three implementations.
+  #
+  # spec/test-vectors-adversarial/ is a sibling of spec/test-vectors/ rather than a
+  # subdirectory precisely because impl/go/internal/scpe/vectors_test.go and
+  # impl/rust/tests/vectors.rs hard-assert a directory count of exactly 18 and are treated as
+  # frozen verifier code. That keeps the 18-vector conformance contract intact, but it also
+  # left the pack's "all three implementations agree" claim resting on whoever last
+  # regenerated it having run both ports by hand. spec/test-vectors-adversarial/verify_all.py
+  # cannot close that gap: it is a generator aid, printing what the Python verifier said and
+  # exiting 0 no matter what it printed. This job drives the two ports through the same CLIs
+  # an integrator would invoke, so the claim becomes mechanical without either frozen test
+  # file being edited.
+  adversarial:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: impl/go/go.mod
+          cache: false
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      # All three verifiers shell out to it.
+      - run: command -v ssh-keygen
+
+      # Out to RUNNER_TEMP: a verifier binary sitting in the checkout could be picked up as a
+      # committed file by a later step, and the point of this job is that the tree is exactly
+      # what was pushed.
+      - name: Build the Go verifier
+        run: go build -o "$RUNNER_TEMP/scpe-verify-go" ./cmd/scpe-verify
+        working-directory: impl/go
+
+      # Debug profile — seven vectors do not need optimised code — and deliberately no cargo
+      # cache: a second cache key for the same crate tree would double this repo's cache
+      # footprint to shorten one short build. --locked for the same reason as the `rust` job.
+      - name: Build the Rust verifier
+        run: cargo build --locked
+        working-directory: impl/rust
+
+      - name: Every adversarial vector, every implementation, against expected.json
+        env:
+          # The two paths the build steps above wrote to. `runner.temp` is the expression form
+          # of the RUNNER_TEMP the shell used; impl/rust/target/ is cargo's own output
+          # directory and is already gitignored.
+          GO_VERIFIER: ${{ runner.temp }}/scpe-verify-go
+          RUST_VERIFIER: impl/rust/target/debug/scpe-verify
+        run: |
+          python - <<'PY'
+          import json, os, subprocess, sys
+          from pathlib import Path
+
+          ROOT = Path("spec/test-vectors-adversarial")
+          # Asserted rather than merely iterated, for the same reason the normative job
+          # asserts 18: a vector added here and forgotten should fail loudly, not pass by
+          # silently doing less.
+          EXPECTED_COUNT = 7
+
+          # The reference verifier runs from the checkout on a bare interpreter, which is all
+          # it needs (it is stdlib-only); the ports run as the built binaries the pack's
+          # README says were previously invoked by hand.
+          IMPLS = [
+              ("python", [sys.executable, "reference/standalone/verify_envelope.py"]),
+              ("go", [os.environ["GO_VERIFIER"]]),
+              ("rust", [os.environ["RUST_VERIFIER"]]),
+          ]
+
+          vectors = sorted(d for d in ROOT.iterdir()
+                           if d.is_dir() and (d / "expected.json").is_file())
+          if len(vectors) != EXPECTED_COUNT:
+              sys.exit(f"{ROOT}: expected {EXPECTED_COUNT} vectors, found "
+                       f"{len(vectors)}: {[d.name for d in vectors]}")
+
+          failures = []
+          for vector in vectors:
+              want = json.loads(
+                  (vector / "expected.json").read_text(encoding="utf-8"))["status"]
+              got, anchor = {}, {}
+              for name, argv in IMPLS:
+                  # Each vector ships the public half it needs, so --keys keeps this offline;
+                  # the Rust port has no forge fetch and requires the flag in any case.
                   proc = subprocess.run(
-                      [sys.executable, str(VERIFIER), str(vector),
-                       "--keys", str(vector / "keys"), "--json"],
-                      capture_output=True, text=True, timeout=60)
-                  want = json.loads(
-                      (vector / "expected.json").read_text(encoding="utf-8"))["status"]
+                      argv + [str(vector), "--keys", str(vector / "keys"), "--json"],
+                      capture_output=True, text=True, timeout=120)
                   try:
-                      got = json.loads(proc.stdout)["status"]
+                      out = json.loads(proc.stdout)
+                      got[name], anchor[name] = out["status"], out.get("key_source")
                   except (ValueError, KeyError, TypeError):
-                      got = None
-                  # The exit-code contract is part of the spec: 0 iff verified.
-                  ok = got == want and (proc.returncode == 0) == (want == "verified")
-                  print(f"{'ok  ' if ok else 'FAIL'} {vector.as_posix()}: "
-                        f"want={want} got={got} rc={proc.returncode}")
-                  if not ok:
-                      failures.append(f"{vector.as_posix()}: want={want} got={got} "
-                                      f"rc={proc.returncode}\n{proc.stderr[-400:]}")
+                      got[name], anchor[name] = None, None
+                  # The exit-code contract is part of the spec and all three ports claim it:
+                  # 0 iff verified.
+                  if got[name] != want or (proc.returncode == 0) != (want == "verified"):
+                      failures.append(
+                          f"{vector.as_posix()} [{name}]: want={want} got={got[name]} "
+                          f"rc={proc.returncode}\n{proc.stderr[-400:]}")
+              # key_source is printed, never asserted: no expected.json in either pack records
+              # one, and this project's rule is that an expected value is copied from a real
+              # run and never assumed. Printing all three side by side, JSON-encoded, is what
+              # turns recording them into a read of this log rather than a manual rebuild of
+              # both ports.
+              ok = all(got[name] == want for name, _ in IMPLS)
+              print(f"{'ok  ' if ok else 'FAIL'} {vector.name}: want={want} | " + "  ".join(
+                  f"{name}={got[name]} key_source={json.dumps(anchor[name])}"
+                  for name, _ in IMPLS))
 
           if failures:
               sys.exit("\n\n".join(failures))

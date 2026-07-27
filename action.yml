@@ -98,11 +98,11 @@ outputs:
       "unsupported-version", "unsupported-provider", "unsupported-subject",
       "identity-unverifiable", "signature-invalid", "tampered", "verified".
       Exactly one of them passes: "verified". The specific failure is
-      deliberately NOT collapsed into a single "not-verified" the way it was
-      before v1.0.0 — "tampered" and "identity-unverifiable" ask a maintainer
-      for completely different reactions. The status is now always emitted,
-      including when require=false, and "n/a" is gone: the status is
-      information, the gate is `gate-pass`. At level=1 it instead reflects
+      deliberately NOT collapsed into a single "not-verified" — "tampered" and
+      "identity-unverifiable" ask a maintainer for completely different
+      reactions. The status is always emitted, including when require=false,
+      and there is no "n/a": the status is information, the gate is
+      `gate-pass`. At level=1 it instead reflects
       disclosure presence ("verified"/"unattested"), since level 1 has no
       signature to have an opinion about.
     value: ${{ steps.seal.outputs.status }}

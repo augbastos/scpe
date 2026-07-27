@@ -3,5 +3,14 @@
 
 # Test-vector artifacts are signed/hashed as EXACT BYTES — git must never touch their
 # line endings, or the SSHSIG over manifest.json (and the diff hash) breaks on checkout.
-# This rule is last so it wins for these paths.
+# These rules are last so they win for these paths.
 spec/test-vectors/** -text
+# The adversarial pack is written by the same signer and is just as byte-exact, so it needs
+# the same exemption. Nothing fails there today, but only by luck: its signed files happen
+# to carry no CR, while eight unsigned ones (the `keys` lists, one expected.json) do — and
+# git already rewrote those to LF on the way into the index, a divergence `git status` never
+# shows. Let one regenerated manifest.json land with CRLF and that same rewrite breaks its
+# SSHSIG in every fresh clone, CI included, while the author's own working tree keeps
+# verifying. This rule does not repair the eight already stored as LF (no signature covers
+# them) — it stops the next vector from being born broken.
+spec/test-vectors-adversarial/** -text

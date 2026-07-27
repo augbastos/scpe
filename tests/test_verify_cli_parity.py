@@ -1,7 +1,8 @@
 """`scpe verify` is a passthrough, and this is the test that keeps it one.
 
 The package exists so someone can verify without cloning the repo
-(`pipx run --spec scpe-protocol scpe verify ...`). The moment its output drifts from
+(`pipx run --spec 'scpe-protocol>=0.2' scpe verify ...` — the floor matters: 0.1.2 on PyPI
+is a different program that verifies a removed format). The moment its output drifts from
 reference/standalone/verify_envelope.py's, there are two verifiers with one name — the
 exact failure the whole design is arranged to avoid (three implementations, one result:
 Python, Go, Rust, and now a package that must not become a fourth).

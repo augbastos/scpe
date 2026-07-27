@@ -10,9 +10,9 @@ name: scpe
 #                    disk. Safe to execute code from a stranger's fork.
 #   workflow_run  -> TRUSTED "seal" job: runs afterwards in the BASE repo with a
 #                    write-scoped token. It only posts the seal comment; it never
-#                    checks out or runs contributor code — and since v1.0.0 it also
-#                    installs nothing at all, so the only binaries it runs are the
-#                    runner's own pre-installed `python3` and `gh`.
+#                    checks out or runs contributor code, and it installs nothing at
+#                    all, so the only binaries it runs are the runner's own
+#                    pre-installed `python3` and `gh`.
 #
 # GATE MODE (policy, opt-in): set `require: "true"` on the `augbastos/scpe@v0.2`
 # step below to make this repository REQUIRE a signed scpe contribution. A PR with

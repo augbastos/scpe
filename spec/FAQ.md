@@ -2,6 +2,12 @@
 
 **Spec:** `scpe/0.1` · **License:** CC BY 4.0
 
+> **Which "0.2"?** `scpe/0.N` always names the **protocol**, and this document answers for
+> `scpe/0.1`. It is a separate axis from the reference implementation's release line — the
+> `scpe-protocol` package version and the `augbastos/scpe` Action tag move on their own and
+> are already past 0.1. A roadmap item "on `scpe/0.2`" therefore means a future *protocol*
+> revision, not the next package release.
+
 ---
 
 **Why SSH signatures and not GPG or Sigstore?**
@@ -10,7 +16,7 @@ their profile, published at `github.com/<login>.keys`; `ssh-keygen -Y sign/verif
 ships with OpenSSH ≥ 8.2. GPG requires a parallel key ecosystem most contributors
 never set up. Sigstore's keyless flow (OIDC via Fulcio) is excellent but introduces
 an online CA and a transparency log — infrastructure SCPE deliberately avoids in
-v0.1. Sigstore as an *alternative signing method* is on the `scpe/0.2` roadmap for
+`scpe/0.1`. Sigstore as an *alternative signing method* is on the `scpe/0.2` roadmap for
 multi-forge and self-hosted use, where GitHub's key endpoint doesn't exist.
 
 **Git already has signed commits, and GitHub shows a "Verified" badge. Why isn't
@@ -141,8 +147,8 @@ byte-exact framing, so `scpe/0.1` carries no DSSE envelope of its own. Full comp
 
 **Why not Sigstore?**
 Sigstore's keyless flow needs an online CA (Fulcio) and public transparency log (Rekor), which
-breaks v0.1's verify-offline / no-server property; it's on the `scpe/0.2` roadmap as an optional
-signer. Full comparison: [../docs/comparison.md](../docs/comparison.md).
+breaks `scpe/0.1`'s verify-offline / no-server property; it's on the `scpe/0.2` roadmap as an
+optional signer. Full comparison: [../docs/comparison.md](../docs/comparison.md).
 
 **Why not C2PA?**
 C2PA is the standard for consumer *media* provenance — X.509 / trust-list, manifest embedded in

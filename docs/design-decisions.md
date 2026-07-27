@@ -212,7 +212,7 @@ server that would still have to be trusted.
 | Signed message | Exact manifest bytes | Canonical JSON (RFC 8785) | Manifest must travel as bytes; reformatting breaks the seal |
 | Key-fetch host | Fixed provider→host enum table | Manifest-supplied host/URL/allowlist | Enterprise forges need owner-side config, not a manifest field |
 | Attestation transport | PR body HTML comment (+ standalone envelope) | Git notes; committed file; commit trailer | No cryptographic link after squash/rebase merge |
-| Infrastructure | None (offline re-derivation) | A verification service | No central revocation / transparency / timestamp in v0.1 |
+| Infrastructure | None (offline re-derivation) | A verification service | No central revocation / transparency / timestamp in `scpe/0.1` |
 
 ---
 

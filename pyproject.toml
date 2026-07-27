@@ -1,5 +1,8 @@
 [build-system]
-requires = ["setuptools>=68"]
+# >=77 is the floor that reads `license` below as a PEP 639 SPDX expression rather than as
+# legacy free text. Older setuptools still builds this file, it just records the license the
+# old way — pinning the floor keeps the published metadata the same wherever it is built.
+requires = ["setuptools>=77"]
 build-backend = "setuptools.build_meta"
 
 [project]
@@ -8,13 +11,15 @@ version = "0.2.0"
 description = "SCPE: an open protocol for verifiable provenance of any digital artifact — who produced a contribution or file, and that it wasn't tampered with, verified offline with no server and no new accounts. Ships the single-file reference verifier, its producer, and a CLI (`scpe`) that seals a pull request from it."
 readme = "README.md"
 requires-python = ">=3.11"
-license = { text = "Apache-2.0" }
+# A bare SPDX expression (PEP 639), not `{ text = ... }` and not a `License ::` classifier:
+# setuptools deprecates both older spellings, and a build that prints deprecation warnings
+# is a build whose real warnings stop being read.
+license = "Apache-2.0"
 authors = [{ name = "Augusto Bastos" }]
 keywords = ["github", "contributions", "open-source", "supply-chain", "provenance", "attestation", "code-signing", "ssh", "sshsig", "verification", "ci"]
 classifiers = [
     "Development Status :: 3 - Alpha",
     "Intended Audience :: Developers",
-    "License :: OSI Approved :: Apache Software License",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
     "Topic :: Software Development :: Version Control :: Git",
@@ -46,6 +51,6 @@ scpe-envelope = "reference.producer:main"
 # `reference*` is packaged alongside `scpe*` on purpose: reference/standalone/verify_envelope.py
 # is where every verdict is produced, and scpe/verify.py imports it rather than carrying a
 # second copy. Shipping one and not the other would fork the conformance surface that the
-# eighteen test vectors and the Go and Rust ports are measured against.
+# eighteen normative test vectors and the Go and Rust ports are measured against.
 [tool.setuptools.packages.find]
 include = ["scpe*", "reference*"]

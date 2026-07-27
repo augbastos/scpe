@@ -1,6 +1,7 @@
 # Your project has an AI policy. Who enforces it?
 
-*Draft — launch essay for SCPE. Status: v0.1, no external adoption. Keep every claim honest.*
+*Draft — launch essay for SCPE. Status: spec `scpe/0.1`, no external adoption. Keep every
+claim honest.*
 
 ---
 
@@ -84,11 +85,11 @@ grow, the gap between *"the record says it was this agent"* and *"prove it, and 
 wasn't altered"* stops being academic. Someone has to own the verifiable layer. It doesn't have
 to be a company; it can be a protocol.
 
-SCPE is that attempt: an open protocol, v0.1, with a specification, a single-file verifier you
-can audit in ten minutes, and a maintainer-side Action. No hosted service, and there never will
-be one. If your project wrote an AI policy this year, the honest next question is whether you'd
-turn on the check that enforces it — and that's exactly the question worth answering with real
-maintainers, not more code.
+SCPE is that attempt: an open protocol — `scpe/0.1` — with a specification, a single-file
+verifier you can audit in ten minutes, and a maintainer-side Action. No hosted service, and
+there never will be one. If your project wrote an AI policy this year, the honest next
+question is whether you'd turn on the check that enforces it — and that's exactly the
+question worth answering with real maintainers, not more code.
 
 ---
 

@@ -1,12 +1,10 @@
 __pycache__/
 *.egg-info/
 .pytest_cache/
-.cc-work/
 *.pem
 dist/
 build/
 *.log
-site/.playwright-mcp/
 
 # internal specs/plans — never public
 docs/superpowers/

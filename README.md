@@ -88,7 +88,7 @@ whether it still matches.
 |---|---|
 | [`spec/`](spec/) | The normative protocol: [SPEC.md](spec/SPEC.md), the threat model, the manifest schema, and 18 test vectors that are the conformance contract. |
 | [`reference/standalone/verify_envelope.py`](reference/standalone/verify_envelope.py) | **The verifier.** One stdlib-only file that imports nothing else in this repo. |
-| [`reference/producer.py`](reference/producer.py) | The producer (`scpe-envelope pack` / `attest` / `submit`) — signs an envelope with a key the contributor already owns. |
+| [`reference/producer.py`](reference/producer.py) | The producer (`scpe-envelope pack` / `pack-artifact` / `attest` / `verify` / `submit`) — signs an envelope with a key the contributor already owns. |
 | [`impl/go/`](impl/go/), [`impl/rust/`](impl/rust/) | Two independent ports of the verifier, held to the same verdict by a differential test. |
 | [`action.yml`](action.yml) | The maintainer-side GitHub Action. It runs the verifier above, on the same format, out of its own checkout. |
 | [`scpe/`](scpe/) | The `scpe-protocol` package: a stdlib-only CLI over that same verifier, plus the seal the Action renders and the opt-in badge. |
@@ -167,9 +167,12 @@ Add a workflow that verifies every PR and posts a seal. Set `require` to gate me
     require: "true"   # fail the check on anything not verifiable
 ```
 
-Pin the exact tag while the protocol is pre-1.0. `v0.2` is the first release in which the
-Action verifies the `scpe/0.1` envelope itself; `v0.1.x` verified a different, now-removed
-format, so upgrading from it is a behaviour change and not a patch.
+Pin the exact tag while the protocol is pre-1.0. `v0.2` is an **immutable alias** — it points at
+one commit and is never moved, so a fix arrives as a new tag you adopt by editing the pin, not as
+a silent change under the one you already wrote. It is also the first release in which the Action
+verifies the `scpe/0.1` envelope itself; `v0.1.x` verified a different, now-removed format, so
+upgrading from it is a behaviour change and not a patch — [docs/MIGRATION.md](docs/MIGRATION.md)
+has the steps.
 
 The Action uses a fork-safe two-job split: the untrusted job (which runs contributor code) holds
 no secrets; only a trusted follow-up job posts the comment. Neither level installs anything in the
@@ -233,7 +236,7 @@ single machine — not a formal benchmark suite.
 
 ## Status
 
-**v0.1 — early.** This is a specification plus a reference implementation (a single-file
+**v0.2 — early.** This is a specification plus a reference implementation (a single-file
 verifier, a producer, and a maintainer-side Action). The full test suite — including a 100-PR
 stress proof and a local end-to-end — runs on every push; the CI badge above is its live
 result. Two more independent verifiers, in Go and Rust, reach the same verdict as the Python
@@ -244,12 +247,22 @@ file, the `flag` anchor; no vector exercises the network fetch. The Rust port go
 does not parse the zip-envelope or in-PR-body attestation input shapes that Python and Go both
 accept. There is **no external adoption yet**. It is not a hosted service and never will be.
 
+**`v0.1.x` is legacy: its signed-envelope path verifies a format that is not in this spec.** The
+Action at those tags checked a second envelope format that shipped inside the package and was
+deleted in `0.2.0`. A workflow still pinned there does not fail — it keeps posting seals for a
+format nothing here produces, and once `0.2.0` reaches PyPI it breaks instead, because that
+Action resolved its verifier from the package index at run time rather than from its own
+checkout. [CHANGELOG.md](CHANGELOG.md) has what moved; [docs/MIGRATION.md](docs/MIGRATION.md)
+has what to do about it.
+
 ## Docs
 
 - [spec/SPEC.md](spec/SPEC.md) — the protocol (`scpe/0.1`)
 - [spec/THREAT_MODEL.md](spec/THREAT_MODEL.md) — what it does and does not defend against
 - [spec/FAQ.md](spec/FAQ.md) — why SSH, why the PR body, relation to Agent Trace / Sigstore / patatt
 - [docs/LEVELS.md](docs/LEVELS.md) — the L1 / L2 / L3 assurance ladder
+- [CHANGELOG.md](CHANGELOG.md) — what changed per release, and which version axis it moved
+- [docs/MIGRATION.md](docs/MIGRATION.md) — upgrading a `v0.1.x` pin, and why it doesn't warn you
 
 ## License
 
