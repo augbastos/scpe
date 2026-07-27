@@ -135,6 +135,11 @@ runs:
         PR_BODY: ${{ github.event.pull_request.body }}
         BASE_SHA: ${{ github.event.pull_request.base.sha }}
         HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        # The repository this workflow is running in, compared against the manifest's
+        # SIGNED target.repo. Not configurable on purpose: it is the one value an attacker
+        # must not be able to choose, and a caller who could override it could switch the
+        # check off by pointing it at the repository the envelope was signed for.
+        EXPECT_REPO: ${{ github.repository }}
         REPO_DIR: ${{ inputs.repo }}
         REQUIRE: ${{ inputs.require }}
         ENVELOPE: ${{ inputs.envelope }}
@@ -232,6 +237,8 @@ runs:
           ${ATTESTATION:+--attestation "$ATTESTATION"} \
           ${KEYS:+--keys "$KEYS"} \
           $run_tests \
+          --expect-repo "$EXPECT_REPO" \
+          --expect-base \
           --require "$require_flag" \
           --level 2 \
           --render-comment \

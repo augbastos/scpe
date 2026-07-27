@@ -1,0 +1,4 @@
+{
+  "status": "signature-invalid",
+  "note": "The account publishes two keys; the manifest names the first in contributor.key_fingerprint and the signature was made with the second. Before the three verifiers read that field, `ssh-keygen -Y verify` against the full published set succeeded and this returned `verified` \u2014 a genuine signature under an audit record naming a key that did not produce it. key_fingerprint is a MUST and SPEC \u00a714 states the manifest binds it, but nothing compared it to anything. Restricting the allowed signers to the named key makes the mismatch signature-invalid: the signature cannot be validated against the key the manifest declares. Same status the wrong-identity normative vector already expects, so the eighteen normative expectations are unchanged. This is the only vector in either pack whose keys file holds more than one key, which is why the gap survived all twenty-five."
+}

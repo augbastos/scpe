@@ -155,7 +155,7 @@ jobs:
   # verifies them, it does not reproduce them.
   #
   # Scope is the 18 normative vectors, the same count impl/go/internal/scpe/vectors_test.go
-  # and impl/rust/tests/vectors.rs hard-assert. The seven adversarial vectors get the
+  # and impl/rust/tests/vectors.rs hard-assert. The eight adversarial vectors get the
   # `adversarial` job below, which runs them against all three implementations; repeating
   # their Python leg here would spend a second run to produce the same one signal.
   vectors:
@@ -214,7 +214,7 @@ jobs:
               sys.exit("\n\n".join(failures))
           PY
 
-  # The seven adversarial vectors, against all three implementations.
+  # The eight adversarial vectors, against all three implementations.
   #
   # spec/test-vectors-adversarial/ is a sibling of spec/test-vectors/ rather than a
   # subdirectory precisely because impl/go/internal/scpe/vectors_test.go and
@@ -276,7 +276,7 @@ jobs:
           # Asserted rather than merely iterated, for the same reason the normative job
           # asserts 18: a vector added here and forgotten should fail loudly, not pass by
           # silently doing less.
-          EXPECTED_COUNT = 7
+          EXPECTED_COUNT = 8
 
           # The reference verifier runs from the checkout on a bare interpreter, which is all
           # it needs (it is stdlib-only); the ports run as the built binaries the pack's

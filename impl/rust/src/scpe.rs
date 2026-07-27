@@ -438,17 +438,59 @@ fn make_temp_dir() -> std::io::Result<PathBuf> {
     ))
 }
 
+/// The SHA256 fingerprint `ssh-keygen` reports for one authorized-keys line,
+/// or None when it cannot be read.
+fn key_fingerprint(key_line: &str) -> Option<String> {
+    let td = make_temp_dir().ok()?;
+    let pub_path = td.join("k.pub");
+    let outcome = (|| -> Option<String> {
+        fs::write(&pub_path, format!("{}\n", key_line.trim())).ok()?;
+        let out = Command::new("ssh-keygen").arg("-lf").arg(&pub_path).output().ok()?;
+        if !out.status.success() {
+            return None;
+        }
+        String::from_utf8_lossy(&out.stdout)
+            .split_whitespace()
+            .nth(1)
+            .map(|s| s.to_string())
+    })();
+    let _ = fs::remove_dir_all(&td);
+    outcome
+}
+
 /// verifySignature shells out to `ssh-keygen -Y verify`, exactly as the
 /// Go/Python references do, building a one-line-per-key allowed_signers
 /// file with principal = subject.
-fn verify_signature(manifest_bytes: &[u8], sig_bytes: &[u8], subject: &str, keys_bytes: &[u8]) -> bool {
-    let key_lines: Vec<String> = String::from_utf8_lossy(keys_bytes)
+///
+/// `declared_fingerprint` restricts the allowed signers to the key the manifest
+/// names in `contributor.key_fingerprint`. That field is a MUST and §14 says the
+/// manifest binds it, yet no implementation read it: an account publishing keys
+/// A and B could name A, sign with B, and verify, leaving an audit record that
+/// points at a key which did not sign. None means no restriction.
+fn verify_signature(
+    manifest_bytes: &[u8],
+    sig_bytes: &[u8],
+    subject: &str,
+    keys_bytes: &[u8],
+    declared_fingerprint: Option<&str>,
+) -> bool {
+    let mut key_lines: Vec<String> = String::from_utf8_lossy(keys_bytes)
         .split('\n')
         .map(|ln| ln.trim().to_string())
         .filter(|ln| !ln.is_empty())
         .collect();
     if key_lines.is_empty() {
         return false;
+    }
+
+    if let Some(fp) = declared_fingerprint.map(str::trim).filter(|s| !s.is_empty()) {
+        key_lines.retain(|ln| key_fingerprint(ln).as_deref() == Some(fp));
+        if key_lines.is_empty() {
+            // The named key is not among the ones this account publishes, so the
+            // signature cannot be checked against the key the manifest declares.
+            // signature-invalid, which is what the wrong-identity vector expects.
+            return false;
+        }
     }
 
     let mut signers = String::new();
@@ -775,8 +817,15 @@ pub fn verify(path: &Path, opts: &Options) -> VerifyResult {
     }
     key_source.set(Some(source));
 
-    // 5-6. allowed signers + SSHSIG
-    if !verify_signature(&loaded.manifest, &loaded.sig, subject, &keys_bytes) {
+    // 5-6. allowed signers + SSHSIG, restricted to the key the manifest names.
+    //      The declared fingerprint sits inside the signed bytes, so it cannot be
+    //      pointed at another key without invalidating the signature it gates.
+    let declared_fp = m
+        .get("contributor")
+        .and_then(Value::as_object)
+        .and_then(|c| c.get("key_fingerprint"))
+        .and_then(Value::as_str);
+    if !verify_signature(&loaded.manifest, &loaded.sig, subject, &keys_bytes, declared_fp) {
         return r("signature-invalid", "SSHSIG verification failed", vec![]);
     }
 

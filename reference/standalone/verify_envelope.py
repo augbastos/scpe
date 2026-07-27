@@ -292,12 +292,42 @@ def fetch_keys(host: str, subject: str) -> bytes:
 
 # --------------------------------------------- allowed signers + SSHSIG (§8.5-6)
 
+def key_fingerprint(key_line: str) -> str | None:
+    """The SHA256 fingerprint OpenSSH reports for one authorized-keys line, or None."""
+    with tempfile.TemporaryDirectory(prefix="scpe-fp-") as td:
+        pub = Path(td) / "k.pub"
+        pub.write_text(key_line.strip() + "\n", encoding="utf-8")
+        proc = subprocess.run(["ssh-keygen", "-lf", str(pub)], capture_output=True)
+    if proc.returncode != 0:
+        return None
+    parts = proc.stdout.decode("utf-8", "replace").split()
+    return parts[1] if len(parts) > 1 else None
+
+
 def verify_signature(manifest_bytes: bytes, sig_bytes: bytes,
-                     subject: str, keys_bytes: bytes) -> bool:
+                     subject: str, keys_bytes: bytes,
+                     declared_fingerprint: str | None = None) -> bool:
     key_lines = [ln.strip() for ln in keys_bytes.decode("utf-8").splitlines()
                  if ln.strip()]
     if not key_lines:
         return False
+    # `contributor.key_fingerprint` is a MUST field, and §14 says the manifest *binds* it —
+    # but nothing read it, so a signed field could say anything without consequence. An
+    # account publishing keys A and B could ship a manifest naming A, sign with B, and
+    # verify: the audit record then names a key that did not sign it. Restricting the
+    # allowed signers to the declared key makes the field load-bearing, and a pass then
+    # means "the key this manifest names is published by this account AND produced this
+    # signature" rather than "some key it publishes did".
+    #
+    # A declared fingerprint absent from the published set yields `signature-invalid`, not
+    # a new status: the signature cannot be validated against the key the manifest names.
+    # That is what the `wrong-identity` vector already expects, so none of the eighteen
+    # normative expectations move.
+    if declared_fingerprint:
+        key_lines = [ln for ln in key_lines
+                     if key_fingerprint(ln) == declared_fingerprint]
+        if not key_lines:
+            return False
     signers = "".join(
         f'{subject} namespaces="{NAMESPACE}" {ln}\n' for ln in key_lines)
     with tempfile.TemporaryDirectory(prefix="scpe-verify-") as td:
@@ -453,9 +483,17 @@ def verify(path: Path, keys_file: Path | None, diff_file: Path | None,
     # anchor this verdict rests on, so `no published keys` above reports no key_source.
     key_source = source
 
-    # 5-6. allowed signers + SSHSIG
-    if not verify_signature(manifest_bytes, sig_bytes, subject, keys_bytes):
-        return R("signature-invalid", "SSHSIG verification failed")
+    # 5-6. allowed signers + SSHSIG, restricted to the key the manifest names.
+    #      The declared fingerprint is inside the signed bytes, so an attacker cannot point
+    #      it at a different key without invalidating the very signature it gates.
+    declared_fp = contributor.get("key_fingerprint") if isinstance(contributor, dict) else None
+    declared_fp = declared_fp if isinstance(declared_fp, str) and declared_fp.strip() else None
+    if not verify_signature(manifest_bytes, sig_bytes, subject, keys_bytes,
+                            declared_fingerprint=declared_fp):
+        return R("signature-invalid",
+                 "SSHSIG verification failed"
+                 if declared_fp else
+                 "SSHSIG verification failed (manifest declares no key_fingerprint)")
 
     # 7. subject integrity — dispatch on the SIGNED subject.type (SPEC §6). The
     #    signature (step 5-6) already proved the subject block is authentic, so we now

@@ -20,6 +20,54 @@ release still verifies, byte for byte. What changed is which format the *tooling
 
 ---
 
+## [Unreleased]
+
+Two guarantees the specification described and no implementation enforced. Both were found
+by an outside reviewer reading the repository cold, and both were reproduced before being
+believed.
+
+### Security
+
+- **A verified envelope could be replayed onto another repository.** `subject.target.repo`
+  and `subject.target.base_sha` are signed, are MUST fields, and were read only to be copied
+  into `results.json` — never compared with anything. An attestation lifted off a public
+  pull request therefore verified on an unrelated repository whose diff normalized to the
+  same bytes, reporting `verified`, `key_source: forge` and `gate_pass: true` under the
+  original signer's name. Reproduced end to end before the fix.
+
+  `scpe/context.py` now binds an envelope to where it is presented: the signed repository
+  must match the one the workflow runs in (case-insensitively), and the signed base must be
+  an **ancestor** of the pull request head. Ancestry rather than equality because a base
+  branch tip advances whenever anything merges, while the commit a contributor diffed from
+  does not — equality would have failed every open pull request after any merge. Exposed as
+  `scpe seal --expect-repo --expect-base`; the Action always passes both, and
+  `--expect-repo` is not configurable, since a caller able to override it could switch the
+  check off. Reported in `results.json` as `context_checked` / `context_ok` /
+  `context_detail`, so a consumer can tell "matched" from "never looked".
+
+- **`contributor.key_fingerprint` was a signed field nobody read.** SPEC §14 says the
+  manifest binds it; no implementation compared it to the key that actually verified. An
+  account publishing keys A and B could name A, sign with B, and pass — leaving an audit
+  record pointing at a key that did not produce the signature. All three verifiers now
+  restrict the allowed signers to the declared key, so a pass means *this named key is
+  published by this account and produced this signature*. A fingerprint absent from the
+  published set is `signature-invalid`, which is what the `wrong-identity` vector already
+  expected, so none of the eighteen normative expectations move.
+
+### Added
+
+- `spec/test-vectors-adversarial/fingerprint-names-another-key` — the eighth adversarial
+  vector and the only one in either pack with two keys in its `keys` file, which is why the
+  gap survived twenty-five earlier vectors. Confirmed: with the check removed it returns
+  `verified`; with it, `signature-invalid` in Python, Go and Rust alike.
+- `SECURITY.md` — private reporting channel, what counts as a vulnerability and what is a
+  documented property, supported versions, and a plain statement that no external audit has
+  been done.
+- `tests/test_context_binding.py` — thirteen tests written against the replay scenario
+  rather than the implementation, including the one that pins ancestry-not-equality.
+
+---
+
 ## [0.2.1] — 2026-07-27
 
 Two fixes found by installing the Action on a real repository and opening a real pull

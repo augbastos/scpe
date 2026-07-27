@@ -30,7 +30,8 @@ import tempfile
 from pathlib import Path
 
 from reference.standalone import verify_envelope as _ref
-from scpe import __version__, results as _results, seal as _seal, testrun, verify as _verify
+from scpe import (__version__, context as _context, results as _results, seal as _seal,
+                  testrun, verify as _verify)
 from scpe.optin import init_repo
 
 
@@ -94,9 +95,18 @@ def _cmd_seal(args) -> int:
         diff = ""
         if resolved.diff is not None:
             diff = resolved.diff.read_text(encoding="utf-8", errors="replace")
+        # Read the manifest for context ONLY after the signature verified. Before that it is
+        # attacker-controlled JSON, and comparing an unauthenticated `target.repo` against
+        # the checkout would be theatre — the attacker picks both sides.
+        ctx = None
+        if result.status == _results.VERIFIED and (args.expect_repo or args.expect_base):
+            ctx = _context.check(
+                manifest=_results.signed_manifest(resolved.path),
+                repo_dir=Path(args.repo), head=args.head,
+                expect_repo=args.expect_repo, expect_base=args.expect_base)
         data = _results.build_results(
             result, path=resolved.path, diff=diff, diff_source=resolved.diff_source,
-            diff_note=resolved.note,
+            diff_note=resolved.note, context=ctx,
             # Parsed exactly like reference/level1_lint.py parses $REQUIRE, and deliberately
             # NOT an argparse `choices=` list: a caller who writes `require: True` in YAML
             # must get an informational run, not an argparse exit 2 that kills the untrusted
@@ -222,6 +232,16 @@ def main(argv: list[str] | None = None) -> int:
     sl.add_argument("--keys", default=None,
                     help="offline key list; forces key_source=flag, which the seal displays")
     sl.add_argument("--artifact", default=None, help="artifact bytes for an `artifact` subject")
+    sl.add_argument("--expect-repo", default=None, metavar="OWNER/NAME",
+                    help="require the manifest's signed target.repo to be this repository, "
+                         "case-insensitively. Without it the signed target is reported and "
+                         "never compared, which lets a valid envelope from another "
+                         "repository verify here. CI should always pass it.")
+    sl.add_argument("--expect-base", action="store_true",
+                    help="require the manifest's signed base_sha to be an ancestor of "
+                         "--head. Ancestry rather than equality: the base branch tip moves "
+                         "whenever anything merges, while the commit the contributor "
+                         "diffed from does not.")
     sl.add_argument("--run-tests", action="store_true",
                     help="run the repo's own test suite in this checkout")
     sl.add_argument("--require", default="false",

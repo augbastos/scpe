@@ -529,9 +529,21 @@ status code; verification stops at the first failure.
    > `"bundled"` and is right to. Reporting the anchor is the fix here, not forbidding
    > one: refusing `bundled` keys would take the conformance suite, air-gapped review,
    > and every self-hosted deployment offline with it.
-5. **Build the allowed signers file.** One line per fetched key, principal =
-   `subject`:
+5. **Build the allowed signers file, restricted to the declared key.** Keep only the
+   fetched keys whose SHA256 fingerprint equals `contributor.key_fingerprint`, then write
+   one line per remaining key, principal = `subject`:
    `<subject> namespaces="scpe/0.1" <key-type> <base64-key>`.
+   If no fetched key carries that fingerprint, the signature cannot be checked against the
+   key the manifest names → **`signature-invalid`**.
+
+   > **Why restrict rather than verify against everything published.** The fingerprint is a
+   > MUST field and it sits inside the signed bytes, so it cannot be re-aimed without
+   > invalidating the signature that gates it. Verifying against the full published set
+   > lets an account that publishes keys A and B name A, sign with B, and pass — a genuine
+   > signature under an audit record that points at a key which did not produce it. The
+   > field then records nothing that can be relied on. Restricting makes a pass mean *the
+   > key this manifest names is published by this account and produced this signature*.
+   > Vector: `spec/test-vectors-adversarial/fingerprint-names-another-key`.
 6. **Verify the signature.**
    `ssh-keygen -Y verify -f allowed_signers -I <subject> -n scpe/0.1 -s manifest.sig < manifest.json`
    Failure → **`signature-invalid`**.
@@ -554,6 +566,25 @@ status code; verification stops at the first failure.
 
 Statuses: `unattested · unsupported-version · unsupported-provider ·
 unsupported-subject · identity-unverifiable · signature-invalid · tampered · verified`.
+
+> **`verified` is about the envelope, not about where it was presented.** §8 answers "is
+> this manifest authentic, and does the payload still match what was signed". It cannot
+> answer "was this signed *for this pull request*", because the algorithm is defined over an
+> envelope and nothing else — which is what makes offline conformance and air-gapped review
+> possible.
+>
+> A consumer that accepts contributions therefore MUST also compare the signed
+> `subject.target.repo` with the repository it is running in, and MUST establish that
+> `subject.target.base_sha` belongs to that repository's history. Skipping this accepts a
+> replay: a genuine attestation lifted from a public pull request, presented on another
+> repository whose diff normalizes to the same bytes, is `verified` under the original
+> signer's name. Both fields are MUST precisely so this is answerable, and both were being
+> reported rather than compared until this paragraph existed.
+>
+> Ancestry, not equality, for the base: a base branch tip advances whenever anything merges,
+> while the commit the contributor diffed from does not. The reference gate implements this
+> in `scpe/context.py` (`scpe seal --expect-repo --expect-base`), and the Action always
+> passes both.
 
 ### 8.1 The algorithm as an ordered state machine (non-normative)
 

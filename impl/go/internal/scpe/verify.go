@@ -484,10 +484,40 @@ func fetchKeys(host, subject string) ([]byte, error) {
 
 // --------------------------------------------- allowed signers + SSHSIG (§8.5-6)
 
+// keyFingerprint returns the SHA256 fingerprint ssh-keygen reports for one
+// authorized-keys line, or "" when it cannot be read.
+func keyFingerprint(keyLine string) string {
+	td, err := os.MkdirTemp("", "scpe-fp-")
+	if err != nil {
+		return ""
+	}
+	defer os.RemoveAll(td)
+	pub := filepath.Join(td, "k.pub")
+	if err := os.WriteFile(pub, []byte(strings.TrimSpace(keyLine)+"\n"), 0o600); err != nil {
+		return ""
+	}
+	out, err := exec.Command("ssh-keygen", "-lf", pub).Output()
+	if err != nil {
+		return ""
+	}
+	fields := strings.Fields(string(out))
+	if len(fields) < 2 {
+		return ""
+	}
+	return fields[1]
+}
+
 // verifySignature shells out to `ssh-keygen -Y verify`, exactly as the Python
 // reference does, building a one-line-per-key allowed_signers file with
 // principal = subject.
-func verifySignature(manifestBytes, sigBytes []byte, subject string, keysBytes []byte) bool {
+//
+// declaredFingerprint restricts the allowed signers to the key the manifest
+// names in contributor.key_fingerprint. That field is a MUST and §14 says the
+// manifest binds it, yet no implementation read it: an account publishing keys
+// A and B could name A, sign with B, and verify, leaving an audit record that
+// points at a key which did not sign. Empty means no restriction.
+func verifySignature(manifestBytes, sigBytes []byte, subject string, keysBytes []byte,
+	declaredFingerprint string) bool {
 	var keyLines []string
 	for _, ln := range strings.Split(string(keysBytes), "\n") {
 		ln = strings.TrimSpace(ln)
@@ -497,6 +527,21 @@ func verifySignature(manifestBytes, sigBytes []byte, subject string, keysBytes [
 	}
 	if len(keyLines) == 0 {
 		return false
+	}
+	if declaredFingerprint != "" {
+		var named []string
+		for _, ln := range keyLines {
+			if keyFingerprint(ln) == declaredFingerprint {
+				named = append(named, ln)
+			}
+		}
+		if len(named) == 0 {
+			// The named key is not among the ones this account publishes, so the
+			// signature cannot be checked against the key the manifest declares.
+			// signature-invalid, which is what the wrong-identity vector expects.
+			return false
+		}
+		keyLines = named
 	}
 	var signers strings.Builder
 	for _, ln := range keyLines {
@@ -711,8 +756,12 @@ func Verify(path string, opts Options) Result {
 	}
 	keySource = &source
 
-	// 5-6. allowed signers + SSHSIG
-	if !verifySignature(in.manifest, in.sig, subject, keysBytes) {
+	// 5-6. allowed signers + SSHSIG, restricted to the key the manifest names.
+	//      The declared fingerprint sits inside the signed bytes, so it cannot be
+	//      pointed at another key without invalidating the signature it gates.
+	declaredFP, _ := contributor["key_fingerprint"].(string)
+	declaredFP = strings.TrimSpace(declaredFP)
+	if !verifySignature(in.manifest, in.sig, subject, keysBytes, declaredFP) {
 		return R("signature-invalid", "SSHSIG verification failed", nil)
 	}
 
