@@ -180,8 +180,11 @@ runs:
         # the worst possible place to discover an argument-parsing error. Anything
         # that is not literally "true" is false, which keeps gate mode opt-in even
         # when a caller mistypes it. Read through $REQUIRE (set in env: above) rather
-        # than interpolating ${{ }} into the script — a expression pasted into shell
-        # text is the injection shape this two-job split exists to avoid.
+        # than pasting a GitHub expression into the script — an expression expanded
+        # into shell text is the injection shape this two-job split exists to avoid.
+        # (Writing an empty expression here, even inside a comment, is itself fatal:
+        # the template engine parses this whole block and rejects the file before any
+        # step runs. Describe expressions in prose; never spell an empty one out.)
         require_flag=false
         [ "$REQUIRE" = "true" ] && require_flag=true
 
