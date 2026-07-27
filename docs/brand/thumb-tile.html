@@ -1,47 +1,38 @@
 <!doctype html>
 <html><head><meta charset="utf-8"><link rel="stylesheet" href="_style.css">
 <style>
-  /* 1200 x 1200 — the site's hero, magnified. Nothing here is composed for this file.
-     The mark, the H1 and the mono strapline are the site's opening screen at the site's own
-     pixel values; only the whole block is scaled, exactly like the cards. An earlier version
-     of this file invented a display lockup — a 236px wordmark on 26px tracking, centred —
-     which used the right typefaces to draw something the site does not contain. Don't.
-     If a tile needs to read smaller, raise the scale; never redraw the composition. */
-  .frame { width: 1200px; height: 1200px; }
+  /* 1200 x 1200 — the site's header lockup, magnified.
+     Mark beside wordmark is the one logo the site actually has: 17px mark, 12px gap, SCPE at
+     13px IBM Plex Mono 600 on 1.9px tracking. Those are the site's numbers, kept in the same
+     ratios; only the block as a whole is scaled, so this is the header at tile size and not a
+     logo drawn for this file. At 190px on a portfolio grid that is the largest the name can
+     be set and still be the site's.
+     Two earlier versions of this file got it wrong: one invented a display lockup with its
+     own tracking, one reproduced the hero and read too small. Scale the block, never redraw it. */
+  .frame { width: 1200px; height: 1200px; display: grid; place-items: center; }
   .frame::before, .frame::after { content: ''; position: absolute; pointer-events: none; }
-  .frame::before { width: 900px; height: 900px; top: -330px; left: 120px; background: var(--wash-1); }
-  .frame::after  { width: 820px; height: 820px; bottom: -330px; left: 220px; background: var(--wash-3); }
+  .frame::before { width: 900px; height: 900px; top: -300px; left: 150px; background: var(--wash-1); }
+  .frame::after  { width: 820px; height: 820px; bottom: -300px; left: 220px; background: var(--wash-3); }
 
-  /* the site's hero column, at the site's px, scaled as one block */
-  .frame .hero {
-    position: absolute; z-index: 1;
-    /* The H1 breaks where the site breaks it, so the column only has to hold the longer
-       line rather than the site's full 720px measure. That buys scale, which is the only
-       lever allowed here: read smaller by magnifying the block, never by redrawing it. */
-    width: 580px;
-    transform: scale(1.9);
-    transform-origin: top left;
-    top: 318px; left: 52px;
+  /* the header row, at the site's px */
+  .lock {
+    position: relative; z-index: 1;
+    display: flex; align-items: center; gap: 12px;
+    transform: scale(13.4);
   }
-  .hero .mark { width: 104px; height: 104px; display: block; margin-bottom: 26px; }
-  .hero h1 { margin-bottom: 22px; }
-  .hero .strap {
+  .lock svg { width: 17px; height: 17px; display: block; }
+  .lock .word {
     font-family: 'IBM Plex Mono', monospace;
-    font-size: 12px; letter-spacing: .9px; color: var(--body);
-  }
-  .hero .meta {
-    font-family: 'IBM Plex Mono', monospace;
-    font-size: 11.5px; letter-spacing: .5px; color: var(--faint); margin-top: 10px;
+    font-size: 13px; font-weight: 600; letter-spacing: 1.9px;
+    text-indent: 1.9px;   /* tracking leaves a trailing gap; nudge back to true centre */
   }
 </style>
 </head>
 <body>
 <div class="frame">
-  <div class="hero">
-    <svg class="mark" viewBox="0 0 64 64" xmlns="http://www.w3.org/2000/svg"><rect width="64" height="64" fill="#0D1117"/><path fill="#E9EDF2" d="M10 12H26V19H17V45H26V52H10ZM54 12H38V19H47V45H38V52H54Z"/><path fill="#898CF2" d="M32 22.5 41.5 32 32 41.5 22.5 32Z"/></svg>
-    <h1>A signature on the code,<br>and on the AI claim.</h1>
-    <div class="strap">Signed Contribution Provenance Envelope</div>
-    <div class="meta">scpe/0.1 &nbsp;·&nbsp; code licensed Apache-2.0</div>
+  <div class="lock">
+    <svg viewBox="0 0 64 64" xmlns="http://www.w3.org/2000/svg"><rect width="64" height="64" fill="#0D1117"/><path fill="#E9EDF2" d="M10 12H26V19H17V45H26V52H10ZM54 12H38V19H47V45H38V52H54Z"/><path fill="#898CF2" d="M32 22.5 41.5 32 32 41.5 22.5 32Z"/></svg>
+    <span class="word">SCPE</span>
   </div>
 </div>
 </body></html>
