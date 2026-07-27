@@ -19,6 +19,10 @@
   <img alt="status" src="https://img.shields.io/badge/v0.2-early-d29922?style=flat-square&labelColor=0b0b0c">
 </p>
 
+<p align="center">
+  <a href="https://augbastos.github.io/scpe/"><b>augbastos.github.io/scpe</b></a> — what it is, in one page
+</p>
+
 An open protocol for two questions a pull request cannot answer today: **who signed this
 change**, and **what did they declare about AI use** — with proof that the diff is
 byte-for-byte what they signed. No SCPE server, no new accounts, no new keys: the contributor
