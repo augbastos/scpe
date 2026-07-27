@@ -36,6 +36,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
+	"unicode/utf8"
 )
 
 const (
@@ -295,6 +296,20 @@ func parseManifest(manifestBytes []byte) (map[string]interface{}, error) {
 	// Decoder.Decode reads only the first JSON value and ignores trailing bytes
 	// (Python's json.loads rejects trailing non-whitespace). Both are reproduced
 	// here so a malformed manifest maps to signature-invalid, as the reference does.
+	//
+	// (3) Invalid UTF-8. encoding/json REPAIRS it, substituting U+FFFD, so Go alone
+	// accepted a manifest that the reference decodes with strict utf-8 and that
+	// serde_json rejects as an invalid code point. Measured on the differential
+	// harness: one bit-flipped byte gave `manifest unparsable` from Python and Rust
+	// and `SSHSIG verification failed` from Go — the same status, reached by a
+	// different path, which only showed up once key_source was compared too. The
+	// statuses agreed there by luck, because a mutated manifest also breaks its
+	// signature. A producer that signed non-UTF-8 bytes would have split the verdict
+	// itself: `verified` from Go, `signature-invalid` from the other two, on the same
+	// signed bytes. SPEC §4.1 requires the manifest to be UTF-8, so enforce it here.
+	if !utf8.Valid(manifestBytes) {
+		return nil, errors.New("manifest is not valid UTF-8")
+	}
 	dec := json.NewDecoder(bytes.NewReader(manifestBytes))
 	var v interface{}
 	if err := dec.Decode(&v); err != nil {
@@ -685,12 +700,16 @@ func Verify(path string, opts Options) Result {
 		keysBytes = b
 		source = keySourceForge
 	}
-	// Claimed only once bytes are actually in hand: the two returns above got
-	// none, so they must not report a tier they never read from.
-	keySource = &source
+	// Claimed only once a NON-EMPTY key set is in hand. SPEC §8 step 4 makes this a MUST,
+	// and the empty check has to come first: a keys file that exists but holds nothing was
+	// read, yet no key was obtained from it. Assigning before this returned "flag" for an
+	// empty --keys file while the Python reference returned null — the three ports
+	// disagreeing on the same input, which is the one thing this protocol promises cannot
+	// happen. No vector has an empty keys file, so no test was red.
 	if len(bytes.TrimSpace(keysBytes)) == 0 {
 		return R("identity-unverifiable", "no published keys", nil)
 	}
+	keySource = &source
 
 	// 5-6. allowed signers + SSHSIG
 	if !verifySignature(in.manifest, in.sig, subject, keysBytes) {

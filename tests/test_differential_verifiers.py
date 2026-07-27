@@ -31,6 +31,16 @@ Two mutation families, chosen to stress different parts of SPEC.md §8:
     this exercises the diff-normalization and SHA-256 comparison logic itself,
     independently re-implemented in three languages.
 
+Two fields are compared, not one. `status` is the verdict; `key_source` is the
+SPEC.md §8 step 4 anchor the verdict rests on, and it is the only normative MUST
+that no vector's expected.json can express -- the anchor depends on how the
+verifier was INVOKED, not on the vector's bytes, so the frozen conformance files
+have no slot for it and the Go and Rust ports were emitting it with nothing
+checking the value. Every implementation here is handed the same `--keys` and the
+same bytes, so a difference in the anchor they claim is a real divergence in step
+4 even when all three agree on the status. See tests/test_key_source_anchor.py for
+the Python-side value assertions this pairs with.
+
 Go and Rust are each optional: if the toolchain / a prebuilt binary isn't
 available, that case is reported as an explicit pytest SKIP -- never silently
 dropped from the assertion and never counted as a pass.
@@ -213,41 +223,52 @@ def _materialize(vector: Path, mutation: str, tmp_path: Path) -> Path:
 
 # ------------------------------------------------------------------- verifiers
 
-def _status_from_json_stdout(proc: subprocess.CompletedProcess, impl: str) -> str:
+def _verdict_from_json_stdout(proc: subprocess.CompletedProcess,
+                              impl: str) -> tuple[str, object]:
+    """(status, key_source) -- the two fields SPEC.md §8 requires a result to report.
+
+    `key_source` is read here rather than in a separate pass because it is the one
+    normative MUST no vector's expected.json can express (the anchor depends on HOW the
+    verifier was invoked, not on the vector's bytes -- see tests/test_key_source_anchor.py),
+    which left the Go and Rust ports emitting the field with nothing asserting it. A
+    missing key is a failure, not a None: §8 step 4 says report it.
+    """
     if not proc.stdout.strip():
         pytest.fail(f"{impl} verifier produced no stdout; stderr: {proc.stderr[-500:]}")
     try:
-        return json.loads(proc.stdout)["status"]
+        data = json.loads(proc.stdout)
+        return data["status"], data["key_source"]
     except (json.JSONDecodeError, KeyError) as exc:
-        pytest.fail(f"{impl} verifier gave unparsable --json output {proc.stdout!r}: {exc}")
+        pytest.fail(f"{impl} verifier gave unparsable --json output {proc.stdout!r} "
+                    f"(both `status` and `key_source` are required by SPEC §8): {exc}")
 
 
-def _run_python(vector_dir: Path) -> str:
+def _run_python(vector_dir: Path) -> tuple[str, object]:
     proc = subprocess.run(
         [sys.executable, str(VERIFIER_PY), str(vector_dir),
          "--keys", str(vector_dir / "keys"), "--json"],
         capture_output=True, text=True, timeout=30)
-    return _status_from_json_stdout(proc, "python")
+    return _verdict_from_json_stdout(proc, "python")
 
 
-def _run_go(vector_dir: Path, go_bin: Optional[Path]) -> str:
+def _run_go(vector_dir: Path, go_bin: Optional[Path]) -> tuple[str, object]:
     if go_bin is None:
         pytest.skip("go toolchain / `go build ./cmd/scpe-verify` unavailable "
                     "-- Go verifier not exercised")
     proc = subprocess.run(
         [str(go_bin), str(vector_dir), "--keys", str(vector_dir / "keys"), "--json"],
         capture_output=True, text=True, timeout=30)
-    return _status_from_json_stdout(proc, "go")
+    return _verdict_from_json_stdout(proc, "go")
 
 
-def _run_rust(vector_dir: Path, rust_bin: Optional[Path]) -> str:
+def _run_rust(vector_dir: Path, rust_bin: Optional[Path]) -> tuple[str, object]:
     if rust_bin is None:
         pytest.skip("no built impl/rust/target/{release,debug}/scpe-verify "
                     "-- Rust verifier not exercised")
     proc = subprocess.run(
         [str(rust_bin), str(vector_dir), "--keys", str(vector_dir / "keys"), "--json"],
         capture_output=True, text=True, timeout=30)
-    return _status_from_json_stdout(proc, "rust")
+    return _verdict_from_json_stdout(proc, "rust")
 
 
 # --------------------------------------------------------------------- fixtures
@@ -316,10 +337,22 @@ def test_mutation_agrees_across_verifiers(vector_name, mutation, tmp_path,
     vector = VECTORS / vector_name
     vector_dir = _materialize(vector, mutation, tmp_path)
 
-    py_status = _run_python(vector_dir)
-    go_status = _run_go(vector_dir, go_verify_bin)
-    rust_status = _run_rust(vector_dir, rust_verify_bin)
+    py_status, py_keys = _run_python(vector_dir)
+    go_status, go_keys = _run_go(vector_dir, go_verify_bin)
+    rust_status, rust_keys = _run_rust(vector_dir, rust_verify_bin)
 
     assert py_status == go_status == rust_status, (
         f"verifiers diverged on {vector_name}/{mutation}: "
         f"python={py_status!r} go={go_status!r} rust={rust_status!r}")
+
+    # Same differential logic applied to the §8 step 4 anchor. No expected value is
+    # asserted -- it varies by mutation (a truncated manifest never reaches step 4 and has
+    # no anchor; an edited-but-parseable one does) and deriving it here would just
+    # re-implement the verifier. What must hold is AGREEMENT: every implementation was
+    # handed the same `--keys` and the same bytes, so any difference in which anchor they
+    # claim is a cross-implementation bug in step 4's precedence or in when the field is
+    # stamped. That can diverge while `status` matches perfectly, which is why it needs
+    # saying separately -- and it is the half of the field no expected.json can cover.
+    assert py_keys == go_keys == rust_keys, (
+        f"verifiers agree on status ({py_status!r}) but diverge on key_source for "
+        f"{vector_name}/{mutation}: python={py_keys!r} go={go_keys!r} rust={rust_keys!r}")

@@ -764,12 +764,16 @@ pub fn verify(path: &Path, opts: &Options) -> VerifyResult {
             }
         }
     };
-    // Claimed only once bytes are actually in hand: the three returns above got
-    // none, so they must not name a tier they never read from.
-    key_source.set(Some(source));
+    // Claimed only once a NON-EMPTY key set is in hand. SPEC §8 step 4 makes this a MUST,
+    // and the empty check has to come first: a keys file that exists but holds nothing was
+    // read, yet no key was obtained from it. Assigning before this returned "flag" for an
+    // empty --keys file while the Python reference returned null — the three ports
+    // disagreeing on the same input, which is the one thing this protocol promises cannot
+    // happen. No vector has an empty keys file, so no test was red.
     if is_all_whitespace(&keys_bytes) {
         return r("identity-unverifiable", "no published keys", vec![]);
     }
+    key_source.set(Some(source));
 
     // 5-6. allowed signers + SSHSIG
     if !verify_signature(&loaded.manifest, &loaded.sig, subject, &keys_bytes) {
