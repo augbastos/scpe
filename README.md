@@ -122,6 +122,16 @@ SLSA uses to sell levels. See [docs/LEVELS.md](docs/LEVELS.md).
    (target repo, base commit, a SHA-256 of the exact diff, an AI-use disclosure, and an
    optional attribution record) signed with the SSH key already on their GitHub profile
    (`ssh-keygen -Y sign -n scpe/0.1`). No new account.
+
+   > **The key has to be published as an authentication key.** `forge` verification reads
+   > `github.com/<login>.keys`, and GitHub serves only authentication keys there — a key added
+   > under *Signing keys* is real, is used by `git`, and **never appears at that URL**, so a
+   > contribution signed with it can only ever reach `key_source: bundled`. Add it with
+   > `gh ssh-key add <key>.pub --title scpe` (no `--type signing`). GitHub does publish signing
+   > keys, at `api.github.com/users/<login>/ssh_signing_keys`, but `<host>/<login>.keys` is the
+   > shape the fixed provider table is built on; reading the signing-key endpoint per provider is
+   > open, not decided. Filing the key in the obviously-correct place and silently losing forge
+   > verification is the first thing that went wrong for the protocol's own author.
 2. It travels inside a **normal pull request** — the diff in the branch, the ~1–2 KB signed
    attestation embedded in the PR body. Merging leaves the repo history clean.
 3. The **owner's side** re-derives everything itself, with no SCPE server involved: the diff's
