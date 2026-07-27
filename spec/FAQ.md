@@ -79,11 +79,14 @@ in-toto Statement or a DSSE envelope would be a registry addition
 Direct prior art, not a new idea. `patatt` ([mricon/patatt](https://github.com/mricon/patatt))
 signs individual email patches with a contributor's own PGP or SSH key, and `b4`
 carries that attestation through the Linux kernel's actual patch-review pipeline at
-kernel.org — this exact pattern (self-sign a contribution with a key the platform
-already publishes, verify independently, no CA, no server) has been running in
-production for years. SCPE applies the same shape to the GitHub pull-request
-boundary instead of a mailing list, and standardizes on SSH signing against
-`github.com/<login>.keys` instead of patatt's PGP/SSH duality. Honestly: self-signing
+kernel.org — this shape (the contributor self-signs, the recipient verifies
+independently, no CA, no server) has been running in production for years. SCPE
+applies it to the GitHub pull-request boundary instead of a mailing list, and changes
+one thing: `patatt` resolves the signer against a keyring the project keeps in the
+repository, so the project curates its own list of signers; SCPE resolves against
+`github.com/<login>.keys`, the keys the forge already publishes, so there is no list
+to curate and the forge becomes the dependency instead. It also standardizes on SSH
+signing rather than patatt's PGP/SSH duality. Honestly: self-signing
 (Level 2 of the tiered model — see [../docs/LEVELS.md](../docs/LEVELS.md)) proves the
 change wasn't tampered with and makes the disclosure non-repudiable; it does not prove
 anything about "who" beyond what the GitHub account itself already asserts — and it gets

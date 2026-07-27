@@ -108,8 +108,14 @@ outputs:
     value: ${{ steps.seal.outputs.status }}
   gate-pass:
     description: >-
-      "true" unless require=true and status != "verified". This is the require
-      DECISION for the trusted job to act on.
+      "true" unless require=true and the contribution falls short of a gate pass.
+      A pass needs all three, not just the status: `status == "verified"`, an
+      `ai_disclosure.mode` present in the SIGNED manifest (level 2 implies level 1
+      — docs/LEVELS.md), and a key anchor of `forge` or `flag`, never `bundled`.
+      A contribution can therefore be `verified` and still fail the gate, which is
+      deliberate: `bundled` keys arrived with the submission and say nothing about
+      the named account. results.json's `fail_message` names which of the three
+      failed. This is the require DECISION for the trusted job to act on.
     value: ${{ steps.seal.outputs.gate-pass }}
 
 runs:
@@ -194,7 +200,11 @@ runs:
         fi
 
         # The verifier arrives through the action's OWN checkout, exactly like
-        # level 1 does — no download, no PyPI, no network at verification time.
+        # level 1 does — no download and no PyPI at verification time. The VERDICT
+        # can still reach the network: with `keys` unset (the default) and the §9
+        # PR-body transport carrying no key set, the verifier fetches the account's
+        # published keys from its provider's fixed host. That fetch IS what
+        # `key_source: forge` means. Pass `keys` to keep the step fully offline.
         # `${{ github.action_path }}` is this repository at the tag the caller
         # pinned, so the bytes that decide the verdict are the bytes of that tag,
         # not "whatever is on PyPI at the moment this PR happened to run". The
@@ -232,8 +242,11 @@ runs:
         # producer) and checked against the signed digest. That needs the base
         # commit to actually be in the checkout: with actions/checkout's default
         # `fetch-depth: 1` it is not, and the seal reports
-        # diff_source: "unavailable" with a `tampered` status whose detail says to
-        # set `fetch-depth: 0`. Same honest limitation level 1 already documents
+        # diff_source: "unavailable" and a `tampered` status whose detail reads
+        # "no diff available to check integrity against". The `fetch-depth: 0` hint
+        # rides in results.json's `diff_note`; it is NOT rendered into the PR
+        # comment, so a maintainer who misconfigures this sees "tampered" and has to
+        # come here to learn why. Same honest limitation level 1 already documents
         # for commit-trailer reads.
         echo "results=results.json" >> "$GITHUB_OUTPUT"
         echo "status=$(python3 -c "import json; print(json.load(open('results.json'))['status'])")" >> "$GITHUB_OUTPUT"

@@ -25,7 +25,12 @@ name: scpe
 # GATE MODE (policy, opt-in): set `require: "true"` on the `augbastos/scpe@v0.2.1` step
 # below to make this repository REQUIRE a signed scpe contribution. A PR with no
 # attestation, or any status other than "verified" (spec scpe/0.1 §8), then FAILS the
-# companion's "seal" job and posts "❌ Not verifiable" instead of the usual report. The
+# companion's "seal" job and posts "❌ Not verifiable" instead of the usual report.
+# Passing the §8 status is necessary and not sufficient: two further cases fail the gate
+# while the status is exactly "verified", each with its own message — a contribution
+# whose signed manifest declares no `ai_disclosure.mode` (level 2 implies level 1), and
+# one anchored on keys enclosed in the submission rather than published by the forge
+# (`key_source: bundled` proves a signing act, not an account). See docs/LEVELS.md. The
 # require DECISION is computed entirely inside THIS untrusted job (no secrets, read-only
 # token) — the trusted job only ever reads that decision from the artifact, never
 # recomputes it. Default is "false": informational-only seal.

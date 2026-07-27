@@ -1,7 +1,7 @@
 # Your project has an AI policy. Who enforces it?
 
-*Draft — launch essay for SCPE. Status: spec `scpe/0.1`, no external adoption. Keep every
-claim honest.*
+*Launch essay for SCPE. Status: spec `scpe/0.1`, tooling `v0.2.1`, **no external adoption**.
+Every claim here is meant to survive a stranger checking it.*
 
 ---
 
@@ -42,21 +42,48 @@ Enforcing *presence* is useful, but a disclosure is still just a claim. A contri
 
 - **Level 1 — Disclosure.** The declaration is present. Zero friction.
 - **Level 2 — Signed.** The contribution rides inside a signed envelope: the change is bound to
-  a claimed GitHub identity and to a SHA-256 of the exact diff, so the maintainer can prove
-  *nothing was tampered with* — with no server. The *who* half needs one more word. Binding the
-  signature to an SSH key **the account already publishes** requires the verifier to actually
-  consult `github.com/<login>.keys`; it can instead check a key file it was handed, or one that
-  came inside the submission, which is what makes fully offline verification possible. The
-  verifier says which it did (`key_source`), and a maintainer who wants the identity claim
-  requires `forge`. The GitHub Action does that fetch by default. The disclosure becomes
-  non-repudiable either way: signed, you can't later deny you made it.
-- **Level 3 — Countersigned** *(on the roadmap)*. A third party — a reviewer, or the agent
-  platform itself — co-signs. That's the strong claim, because a self-signature only proves what
-  the account already asserts.
+  a claimed GitHub identity and to a SHA-256 of the exact diff. The *tamper-evidence* half is
+  unconditional — recompute the diff, compare the hash, done, with no server. The *who* half
+  depends on where the keys came from, and the verifier always says which: `forge` means it
+  fetched them from the account's own git host, `flag` means the maintainer supplied them,
+  `bundled` means they arrived inside the submission. Only the first two say anything about the
+  named account. A `bundled` pass proves a signing act and nothing about who performed it — so
+  the disclosure is non-repudiable at `forge` and `flag`, and merely signed at `bundled`. The
+  Action fetches from the forge by default.
+- **Level 3 — Countersigned** *(roadmap, not implemented)*. A third party — a reviewer, or the
+  agent platform itself — co-signs. That's the strong claim, because a self-signature only
+  proves what the account already asserts.
 
 Adopt at the level that fits. Most projects need Level 1 today. The signature is the mechanism;
 the policy is the product — the same move SLSA made by selling *levels* instead of a metadata
 format.
+
+## What a maintainer actually sees
+
+Not a mock-up. This is the verifier's output on a real signed contribution, checked against the
+keys github.com publishes for that account:
+
+```
++--<+> scpe -------------------------- VERIFIED / LOW RISK --+
+|                                                            |
+| contributor  @augbastos   identity verified                |
+| change       +52 / -16,  6 files                           |
+| risk         LOW   (0 of 13 rules matched)                 |
+| tests        not run   [none]                              |
+| made with    AI-assisted                                   |
+| keys         forge - fetched live from the provider        |
+| profile      SCPE-C  (advisory, not checked)               |
+|                                                            |
++------ rule-based, reproducible - a report, not an approval +
+```
+
+Read the `keys` row before the verdict word. It is the difference between "the account GitHub
+knows as @augbastos signed this" and "something signed this". The seal never collapses the two,
+because a tool that did would be worth less than no tool.
+
+To be exact about what that screenshot is: the contribution was signed by this project's own
+author and verified by its own verifier. It proves the path works end to end. It does not prove
+anyone else has used it, because nobody has.
 
 ## What this is not
 
@@ -64,17 +91,19 @@ Be clear about the limits, because overclaiming is how trust tools lose trust.
 
 This does not judge whether the code is good — it's not review. It does not prove a disclosure
 is honest — a signature proves *who claimed*, not that the claim is true. And it proves nothing
-if the GitHub account or key is compromised: the platform is the root of trust, delegated on
-purpose — but only on the runs where the verifier actually consulted it (`key_source: forge`).
-On the other runs the root is whoever supplied the keys instead. A key file the maintainer
-handed the verifier is worth what that maintainer's own vetting is worth; a key file that came
-inside the submission proves the signing act and nothing about the named account. Same verdict
-word, different root — which is why the verifier reports which one it used.
+about identity if the GitHub account or key is compromised: at `key_source: forge` the platform
+is the root of trust, delegated on purpose. On the other anchors the root is whoever supplied
+the keys. A key file the maintainer handed the verifier is worth what that maintainer's own
+vetting is worth; a key file that came inside the submission proves the signing act and nothing
+about the named account. Same verdict word, different root — which is why the verifier reports
+which one it used.
 
-None of this is a new invention, either. `patatt` and `b4` have run almost exactly this pattern
-— self-sign a contribution with a key the platform publishes, verify it independently, no
-certificate authority, no server — on the Linux kernel's mailing list for years. The idea here
-is to bring that shape to the GitHub pull-request boundary, and to meet the current moment: the
+None of this is a new invention, either. `patatt` and `b4` have run this shape — the contributor
+self-signs, the recipient verifies independently, no certificate authority, no server — on the
+Linux kernel's mailing list for years. They resolve the signer against a keyring the project
+keeps in its own repository; SCPE resolves against the keys the forge already publishes for the
+account. That is the whole delta, and it cuts both ways: nothing for a project to curate, and a
+forge to depend on. The other half of the idea here is meeting the current moment — the
 AI-policy wave that gave every project a rule and no way to enforce it.
 
 ## Why now
@@ -86,12 +115,24 @@ wasn't altered"* stops being academic. Someone has to own the verifiable layer. 
 to be a company; it can be a protocol.
 
 SCPE is that attempt: an open protocol — `scpe/0.1` — with a specification, a single-file
-verifier you can audit in ten minutes, and a maintainer-side Action. No hosted service, and
-there never will be one. If your project wrote an AI policy this year, the honest next
-question is whether you'd turn on the check that enforces it — and that's exactly the
-question worth answering with real maintainers, not more code.
+verifier you can audit in ten minutes, two independent ports in Go and Rust held to the same
+verdict on 18 normative vectors, and a maintainer-side Action. No hosted service, and there
+never will be one.
+
+Turning it on is two files and one pinned step:
+
+```yaml
+- uses: augbastos/scpe@v0.2.1
+  with:
+    level: "1"        # 1 = disclosure lint · 2 = signed envelope required
+    require: "true"   # fail the check on anything not verifiable
+```
+
+If your project wrote an AI policy this year, the honest next question is whether you'd turn on
+the check that enforces it — and that's exactly the question worth answering with real
+maintainers, not more code.
 
 ---
 
-*SCPE — Signed Contribution Provenance Envelope. Spec + reference implementation, open source.
-No adoption yet; this is early, and said plainly on purpose.*
+*SCPE — Signed Contribution Provenance Envelope. Spec + reference implementation, open source
+(code Apache-2.0, spec CC-BY-4.0). No adoption yet; this is early, and said plainly on purpose.*

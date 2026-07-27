@@ -687,9 +687,14 @@ depends on the identity being a real forge account MUST require `key_source == "
 Prior art: `patatt` and `b4` ([mricon/patatt](https://github.com/mricon/patatt),
 kernel.org) already sign and verify individual email patches against a
 contributor's own PGP/SSH key in production, at the Linux kernel's actual scale —
-this specification follows the same shape (self-sign with a key the platform
-already publishes, verify independently, no CA, no server) applied to the GitHub
-pull-request boundary instead of a mailing list. Self-signing at this level
+this specification follows the same shape (the contributor self-signs, the
+recipient verifies independently, no CA and no server) applied to the GitHub
+pull-request boundary instead of a mailing list. Key resolution is where the two
+part, and it is this specification's only real addition: `patatt` anchors on a
+keyring the project tracks in the repository itself, so a project maintains its own
+record of who may sign; §8 step 4 anchors on the keys the provider already publishes
+for the account, so there is no record to maintain — at the price of depending on
+that provider, which is why the anchor that answered is always reported. Self-signing at this level
 (`scpe/0.1` — Level 2 in the tiered adoption model, see
 [../docs/LEVELS.md](../docs/LEVELS.md)) proves integrity of the change and
 non-repudiation of the disclosure; it does not prove anything about the

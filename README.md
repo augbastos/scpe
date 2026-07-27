@@ -235,10 +235,14 @@ vector reaches the `forge` anchor.
 |---|---|
 | PR-body attestation (manifest + sig, base64) | 1.1–1.5 KB |
 | Standalone envelope (3-file / 27-line PR, zipped) | ~1.5 KB |
-| Verify wall-time | ~210 ms cold CLI · ~39 ms in a warm process |
+| Verify wall-time | ~200 ms cold process · ~31 ms warm |
 
 An `artifact` subject adds its payload size on top of ~800 B fixed overhead. Order-of-magnitude,
-single machine — not a formal benchmark suite.
+single machine — not a formal benchmark suite. Re-run it yourself rather than taking the number:
+`python tests/bench_verify.py <envelope.zip> --keys <login.keys>` prints the median of 15 runs
+for both paths. The cold figure is a fresh interpreter per run; the warm one re-verifies
+in-process, which is what a batch consumer sees after import cost is paid once. Both use the
+`flag` anchor, so no network is in the measurement.
 
 ## Where it sits
 
@@ -250,9 +254,12 @@ single machine — not a formal benchmark suite.
 - **A different layer from build provenance.** Sigstore / SLSA / in-toto attest *artifacts and
   builds*; SCPE attests a *contribution*, at the pull-request boundary.
 - **Direct prior art:** `patatt` + `b4` ([kernel.org](https://github.com/mricon/patatt)) have run
-  this exact pattern — self-sign a patch with a key the platform publishes, verify independently,
-  no CA, no server — on the Linux kernel's mailing list for years. SCPE applies the same shape to
-  the GitHub pull-request boundary.
+  this shape — the contributor self-signs a patch, the recipient verifies independently, no CA,
+  no server — on the Linux kernel's mailing list for years. They differ from SCPE in where the
+  key comes from: `patatt` keeps a keyring in the repository, so the project curates who may
+  sign; SCPE reads the keys the forge already publishes for the account, so there is nothing to
+  curate and nothing to depend on but the forge. Same shape, different trust root, applied to
+  the pull-request boundary instead of a mailing list.
 
 ## Status
 
@@ -270,7 +277,7 @@ accept. There is **no external adoption yet**. It is not a hosted service and ne
 **`v0.1.x` is legacy: its signed-envelope path verifies a format that is not in this spec.** The
 Action at those tags checked a second envelope format that shipped inside the package and was
 deleted in `0.2.0`. A workflow still pinned there does not fail — it keeps posting seals for a
-format nothing here produces, and once `0.2.0` reaches PyPI it breaks instead, because that
+format nothing here produces — and now that `0.2.x` is on PyPI it breaks outright instead, because that
 Action resolved its verifier from the package index at run time rather than from its own
 checkout. [CHANGELOG.md](CHANGELOG.md) has what moved; [docs/MIGRATION.md](docs/MIGRATION.md)
 has what to do about it.

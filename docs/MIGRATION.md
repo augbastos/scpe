@@ -36,20 +36,20 @@ pipx run --spec scpe-protocol scpe seal "${{ inputs.envelope }}" --repo … --js
 ```
 
 That resolves `scpe-protocol` from PyPI **on every run, with no version constraint** — an
-unpinned dependency hiding behind a pinned tag. Which gives the pin two distinct failure modes,
-in sequence:
+unpinned dependency hiding behind a pinned tag. That pin has had two distinct failure modes,
+and it is now in the second one.
 
-**Now, before `0.2.0` is published.** PyPI serves `0.1.2`, so the step verifies the removed
-format: an `envelope.json` carrying `PROTOCOL_VERSION "1"`, signed over a canonicalised
-re-serialisation. A conforming SCPE contribution — `manifest.json` signed byte-for-byte with
-SSHSIG, arriving in an `SCPE-ATTESTATION-v1` block — is not something that code can parse, so
-with `require: "true"` it is rejected as unattested. The red X is real; it just isn't about this
-protocol.
+**Today.** PyPI serves `0.2.1`, so the unconstrained resolve picks up `0.2.x`, where
+`scpe seal` takes `--envelope` as a flag and accepts no positional argument. The `v0.1.x`
+invocation is rejected by the argument parser and the step exits non-zero. **A workflow nobody
+edited is already red.** That is the good failure: it is loud, and it points at the pin.
 
-**Later, once `0.2.0` reaches PyPI.** The same pin, unchanged, starts resolving `0.2.0`. In
-`0.2.0` `scpe seal` takes `--envelope` as a flag and accepts no positional argument, so the
-`v0.1.x` invocation is rejected by the argument parser and the step exits non-zero. A workflow
-nobody edited turns red on publication day.
+**Before `0.2.0` was published**, the same pin failed silently instead. PyPI served `0.1.2`, so
+the step verified the removed format — an `envelope.json` carrying `PROTOCOL_VERSION "1"`,
+signed over a canonicalised re-serialisation. A conforming SCPE contribution
+(`manifest.json` signed byte-for-byte with SSHSIG, in an `SCPE-ATTESTATION-v1` block) is not
+something that code can parse, so with `require: "true"` it was rejected as unattested: a wrong
+answer that looked right. If you saw that and concluded SCPE was broken, this is why.
 
 ### What to do
 
@@ -138,25 +138,26 @@ Nothing about your key changes. It is the same SSH key already on your git host,
 account that publishes no files, so pip reports no matching distribution — it will not silently
 install someone else's code, but it will not install this one either.
 
-The zero-install paths (`pipx run`, `uvx`) resolve to the newest release, which is `0.1.2` until
-`0.2.0` is published. Today they hand you the pre-refactor package: the `cryptography` dependency,
-the agent modules, and the verifier for the removed format. Constrain the version:
+The zero-install paths (`pipx run`, `uvx`) resolve to the newest release, which is `0.2.1`.
+Constrain the version anyway, so a later release cannot silently change what decides your pull
+requests:
 
 ```bash
 pipx run --spec 'scpe-protocol>=0.2' scpe verify <path> --keys <login.keys>
 uvx --from 'scpe-protocol>=0.2' scpe verify <path> --keys <login.keys>
 ```
 
-If that fails to resolve, `0.2.0` is not on PyPI yet — run the single file straight out of a
-checkout instead, which is the canonical and cheaper path regardless:
+If that fails to resolve you are offline or behind an index mirror — run the single file straight
+out of a checkout instead, which is the canonical and cheaper path regardless:
 
 ```bash
 python reference/standalone/verify_envelope.py <path> --keys <login.keys>
 ```
 
-One thing cannot be fixed from here: `0.1.2`'s published metadata still advertises
-`cryptography>=42` and an `mcp` extra, both removed. PyPI releases are immutable. Only publishing
-`0.2.0` corrects what the index says.
+One thing cannot be fixed at all: `0.1.2`'s published metadata still advertises
+`cryptography>=42` and an `mcp` extra, both removed. PyPI releases are immutable, so that record
+stands forever. Publishing `0.2.0` and `0.2.1` is what makes the index's *current* answer right;
+the old release's own page keeps lying about its dependencies, and nothing can change that.
 
 ---
 
@@ -198,7 +199,10 @@ Worth stating plainly, because the size of the removal suggests otherwise:
 - **The eight status codes** of §8, which are a closed set.
 - **The §9 PR-body transport** and the `SCPE-ATTESTATION-v1` block.
 - **`reference/standalone/verify_envelope.py`**, which was always the spec's verifier. It is now
-  the *only* one — the Action, `scpe verify` and the vectors all reach it.
+  the only verifier *in the Python package* — the Action, `scpe verify` and the Python vector
+  run all reach it, where before there were two. The independent Go and Rust ports in `impl/`
+  are untouched by this and still run the vectors themselves in CI; "one verifier" means one per
+  language, not one in the repository.
 
 One vector expectation did change, in the adversarial pack rather than the normative one:
 `spec/test-vectors-adversarial/duplicate-manifest-keys` moved from `unsupported-version` to
