@@ -81,9 +81,19 @@ Read the `keys` row before the verdict word. It is the difference between "the a
 knows as @augbastos signed this" and "something signed this". The seal never collapses the two,
 because a tool that did would be worth less than no tool.
 
-To be exact about what that screenshot is: the contribution was signed by this project's own
-author and verified by its own verifier. It proves the path works end to end. It does not prove
+That seal is live on a public pull request: **[scpe-demo#3](https://github.com/augbastos/scpe-demo/pull/3)**.
+Real change, real diff — the Action re-derived the diff from the branch, hashed it, and checked
+the signature against the keys github.com publishes for that account. Go and read it rather than
+taking the block above on faith; that is the entire point of the thing.
+
+To be exact about what it is: the contribution was signed by this project's own author and
+verified by its own verifier. It proves the path works end to end, in public. It does not prove
 anyone else has used it, because nobody has.
+
+One row on that seal is worth a sentence. `tests` reads *no test runner detected*, and the demo
+repository does have passing tests — but no Python manifest, so the tool declines to guess
+`pytest`. Guessing would score every non-Python contribution as a correctness failure. A
+provenance tool that reports a result it did not measure is worth less than no tool.
 
 ## What this is not
 
