@@ -30,7 +30,13 @@ import yaml
 
 _ROOT = Path(__file__).resolve().parent.parent
 _ACTION = _ROOT / "action.yml"
+# The split is TWO FILES, not two jobs in one file, and that is load-bearing: a workflow
+# that names itself in `workflow_run.workflows` fails to REGISTER — GitHub shows the file
+# path where the name belongs and every run dies at the workflow level with zero jobs.
+# Measured on a live repo. So the untrusted and trusted halves are asserted separately,
+# each against the file it actually ships in.
 _WORKFLOW = _ROOT / "docs" / "workflows" / "scpe.yml"
+_SEAL_WORKFLOW = _ROOT / "docs" / "workflows" / "scpe-seal.yml"
 
 
 def _load(path: Path) -> dict:
@@ -90,25 +96,36 @@ def test_composite_action_loads_and_is_a_thin_wrapper():
     assert "seal" in dump
 
 
-def _pull_request_job(workflow: dict) -> dict:
-    jobs = workflow["jobs"]
-    matches = [j for j in jobs.values()
-               if "pull_request" in str(j.get("if", ""))]
-    assert len(matches) == 1, "expected exactly one pull_request-triggered job"
-    return matches[0]
+def _triggers(workflow: dict) -> dict:
+    """The `on:` block. PyYAML reads a bare `on:` key as the boolean True (YAML 1.1
+    treats on/off as booleans), so it is not reachable under the string "on"."""
+    block = workflow.get("on", workflow.get(True))
+    assert isinstance(block, dict), "the workflow must declare a trigger block"
+    return block
 
 
-def _workflow_run_job(workflow: dict) -> dict:
+def _one_job(workflow: dict, trigger: str) -> dict:
+    """The single job in a file whose only trigger is `trigger`. The trigger lives on
+    the FILE now — a job-level `if: github.event_name == ...` would be dead weight."""
+    triggers = _triggers(workflow)
+    assert list(triggers) == [trigger], (
+        f"expected this file to be triggered only by {trigger}, got {list(triggers)}")
     jobs = workflow["jobs"]
-    matches = [j for j in jobs.values()
-               if "workflow_run" in str(j.get("if", ""))]
-    assert len(matches) == 1, "expected exactly one workflow_run-triggered job"
-    return matches[0]
+    assert len(jobs) == 1, f"expected exactly one job in the {trigger} file"
+    return next(iter(jobs.values()))
+
+
+def _pull_request_job() -> dict:
+    return _one_job(_load(_WORKFLOW), "pull_request")
+
+
+def _workflow_run_job() -> dict:
+    return _one_job(_load(_SEAL_WORKFLOW), "workflow_run")
 
 
 def test_pull_request_job_has_no_secret_reference():
     workflow = _load(_WORKFLOW)
-    untrusted = _pull_request_job(workflow)
+    untrusted = _pull_request_job()
     # Match the Actions `secrets.` context, not the prose "no secrets" in a step
     # name. The untrusted job must never touch a secret.
     assert "secrets." not in _dump(untrusted)
@@ -116,7 +133,7 @@ def test_pull_request_job_has_no_secret_reference():
 
 def test_pull_request_job_runs_seal_json_and_uploads_an_artifact():
     workflow = _load(_WORKFLOW)
-    untrusted = _pull_request_job(workflow)
+    untrusted = _pull_request_job()
     steps = untrusted["steps"]
     # The seal runs either inline (`... seal ... --json`) or via the published
     # Marketplace composite action, which runs exactly that internally and emits
@@ -138,7 +155,7 @@ def test_untrusted_job_checks_out_deep_enough_to_recompute_the_diff():
     signed PR would report `tampered` and the level-2 seal would be structurally incapable
     of proving anything. The sample workflow has to say so out loud."""
     workflow = _load(_WORKFLOW)
-    untrusted = _pull_request_job(workflow)
+    untrusted = _pull_request_job()
     checkouts = [s for s in untrusted["steps"] if "actions/checkout" in str(s.get("uses", ""))]
     assert checkouts, "the untrusted job must check the repository out"
     with_block = checkouts[0].get("with") or {}
@@ -149,8 +166,7 @@ def test_untrusted_job_checks_out_deep_enough_to_recompute_the_diff():
 
 
 def test_workflow_run_job_is_the_trusted_comment_poster():
-    workflow = _load(_WORKFLOW)
-    trusted = _workflow_run_job(workflow)
+    trusted = _workflow_run_job()
     # It is the job that holds write access ...
     assert (trusted.get("permissions") or {}).get("pull-requests") == "write"
     # ... and the job that posts the PR comment. (It no longer references `secrets.` at
@@ -166,7 +182,7 @@ def test_trusted_job_never_runs_contributor_code_or_installs_anything():
     """Its whole safety argument is that it holds a write token and executes nothing from
     the PR. Downloading a package at run time would break that: `pipx run --spec` resolves
     the newest release at that moment, inside the job that can comment as the repository."""
-    trusted = _workflow_run_job(_load(_WORKFLOW))
+    trusted = _workflow_run_job()
     blob = _dump(trusted)
     assert "pipx" not in blob
     assert "pip install" not in blob
@@ -174,8 +190,7 @@ def test_trusted_job_never_runs_contributor_code_or_installs_anything():
 
 
 def test_the_two_jobs_are_distinct():
-    workflow = _load(_WORKFLOW)
-    assert _pull_request_job(workflow) is not _workflow_run_job(workflow)
+    assert _pull_request_job() is not _workflow_run_job()
 
 
 # ---- require/gate mode ------------------------------------------------------
@@ -189,7 +204,7 @@ def test_require_input_exists_and_defaults_to_false():
 
 def test_verify_job_wires_require_input_to_the_composite_action():
     workflow = _load(_WORKFLOW)
-    untrusted = _pull_request_job(workflow)
+    untrusted = _pull_request_job()
     seal_steps = [s for s in untrusted["steps"]
                   if "augbastos/scpe@" in str(s.get("uses", ""))]
     assert len(seal_steps) == 1, "expected exactly one call into the scpe Action"
@@ -206,8 +221,7 @@ def test_require_decision_is_computed_in_the_untrusted_action_not_the_trusted_jo
 
     # ...and the trusted job must never re-derive that verdict itself: it may
     # only ever READ a precomputed gate_pass out of the artifact.
-    workflow = _load(_WORKFLOW)
-    trusted_blob = _dump(_workflow_run_job(workflow))
+    trusted_blob = _dump(_workflow_run_job())
     assert "unattested" not in trusted_blob, \
         "trusted job must not recompute the verification status"
     assert "gate_pass" in trusted_blob, \
@@ -215,8 +229,7 @@ def test_require_decision_is_computed_in_the_untrusted_action_not_the_trusted_jo
 
 
 def test_trusted_job_fails_the_check_and_posts_the_not_verifiable_comment():
-    workflow = _load(_WORKFLOW)
-    trusted = _workflow_run_job(workflow)
+    trusted = _workflow_run_job()
     blob = _dump(trusted)
     assert "Not verifiable" in blob
     assert "scpe/0.1" in blob
@@ -227,7 +240,7 @@ def test_trusted_job_fails_the_check_and_posts_the_not_verifiable_comment():
 
 def test_untrusted_job_never_holds_pull_requests_write():
     workflow = _load(_WORKFLOW)
-    untrusted = _pull_request_job(workflow)
+    untrusted = _pull_request_job()
     # Neither the job's own permissions block nor (by extension, since the job
     # doesn't override it) the workflow-level default may grant write access to
     # pull requests — require mode must never need the untrusted job to post.
@@ -286,9 +299,50 @@ def test_no_level_ever_invokes_pipx():
 
 
 def test_the_sample_workflow_never_invokes_pipx_either():
-    """docs/workflows/scpe.yml is what people copy. Its trusted job used to `pipx run` the
+    """docs/workflows/*.yml is what people copy. The trusted job used to `pipx run` the
     package twice — once for the AI re-check stub, once to render the comment."""
-    assert "pipx" not in _WORKFLOW.read_text(encoding="utf-8")
+    for path in (_WORKFLOW, _SEAL_WORKFLOW):
+        assert "pipx" not in path.read_text(encoding="utf-8"), path.name
+
+
+def test_no_workflow_names_itself_in_workflow_run():
+    """A workflow listed in its OWN `workflow_run.workflows` never registers: GitHub
+    fails to parse it, displays the file path where the workflow name should be, and
+    every run fails at the workflow level with zero jobs and "This run likely failed
+    because of a workflow file issue". The shipped template did exactly that, so the
+    fork-safe pattern the README tells people to copy could not run at all. Nothing in
+    the suite caught it — `yaml.safe_load` is happy, and the failure only exists on
+    GitHub's side. This is the cheap local guard for it."""
+    for path in (_WORKFLOW, _SEAL_WORKFLOW):
+        workflow = _load(path)
+        named = _triggers(workflow).get("workflow_run", {}).get("workflows", [])
+        assert workflow["name"] not in named, (
+            f"{path.name} lists its own name ({workflow['name']!r}) in "
+            "workflow_run.workflows — GitHub will refuse to register the file")
+
+
+def test_the_seal_workflow_is_triggered_by_the_verify_workflow_by_name():
+    """The two halves are coupled by NAME, not by filename. Renaming `name:` in one file
+    without the other silently breaks the seal: the verify job still runs green and no
+    comment is ever posted."""
+    verify_name = _load(_WORKFLOW)["name"]
+    seal = _load(_SEAL_WORKFLOW)
+    assert verify_name in _triggers(seal)["workflow_run"]["workflows"], (
+        "scpe-seal.yml must trigger on the workflow named in scpe.yml")
+
+
+def test_the_trusted_job_can_read_the_sibling_runs_artifact():
+    """download-artifact@v4 reaching ACROSS runs (`run-id:`) needs `actions: read`. A
+    job-level permissions block REPLACES the workflow default rather than merging with
+    it, so omitting it here sets actions to none, the download fails, and the gate never
+    runs — a failure mode that looks like "the seal is flaky", not like a typo."""
+    trusted = _workflow_run_job()
+    downloads = [s for s in trusted["steps"]
+                 if "download-artifact" in str(s.get("uses", ""))]
+    assert downloads, "the trusted job must fetch the untrusted job's results"
+    assert "run-id" in (downloads[0].get("with") or {}), \
+        "the artifact lives in the sibling run, so run-id is required"
+    assert (trusted.get("permissions") or {}).get("actions") == "read"
 
 
 def test_level_1_runs_from_the_action_checkout():
@@ -336,8 +390,7 @@ def test_trusted_job_reads_optional_fail_message_and_comment_without_recomputing
     # untrusted action (fail_message / comment keys in results.json) — the trusted job
     # must only ever READ them. Level 2 now fills both in as well, so the trusted job's
     # fallback path is a safety net rather than the normal case.
-    workflow = _load(_WORKFLOW)
-    trusted = _workflow_run_job(workflow)
+    trusted = _workflow_run_job()
     blob = _dump(trusted)
     assert "fail_message" in blob
     assert "get('comment')" in blob or 'get("comment")' in blob
@@ -476,7 +529,7 @@ def test_fork_safety_holds_regardless_of_which_level_is_selected():
         "(it would attempt to elevate beyond whatever the calling job grants)"
 
     workflow = _load(_WORKFLOW)
-    untrusted = _pull_request_job(workflow)
+    untrusted = _pull_request_job()
     job_perms = untrusted.get("permissions") or {}
     assert job_perms.get("pull-requests") != "write"
     workflow_perms = workflow.get("permissions") or {}

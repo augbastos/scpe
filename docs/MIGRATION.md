@@ -65,9 +65,13 @@ explicitly, drop the line unless you really do commit an envelope file.
     require: "true"   # fail the check on anything not verifiable
 ```
 
-The full fork-safe workflow is in [workflows/scpe.yml](workflows/scpe.yml). Check out with
-`fetch-depth: 0`: level 2 recomputes the diff as `git diff <base>...<head>`, and the default
-shallow checkout has no base commit to compare against.
+The full fork-safe workflow is **two files** — [workflows/scpe.yml](workflows/scpe.yml) (the
+untrusted verify job) and [workflows/scpe-seal.yml](workflows/scpe-seal.yml) (the trusted job
+that posts the seal). If you copied the earlier single-file template, replace it with both: a
+workflow that names itself in its own `workflow_run` trigger never registers with GitHub, so
+that template could not run. Check out with `fetch-depth: 0`: level 2 recomputes the diff as
+`git diff <base>...<head>`, and the default shallow checkout has no base commit to compare
+against.
 
 `v0.2` installs nothing, at either level. It runs `python3 -m scpe.cli seal` out of the Action's
 own checkout, stdlib-only, so the bytes that decide a merge are the bytes of the tag you pinned

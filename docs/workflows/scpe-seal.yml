@@ -1,0 +1,73 @@
+name: scpe-seal
+
+# Companion to scpe.yml — drop both in .github/workflows/. This is the TRUSTED half of
+# the fork-safe split: it runs in the BASE repository with a write-scoped token, after
+# the untrusted job finished, and its only job is to post what that job decided.
+#
+# It never checks out the contributor's code, never runs it, and installs nothing. The
+# only binaries it touches are the runner's own pre-installed `python3` and `gh`.
+#
+# Why a separate file: a workflow cannot name itself in `workflow_run.workflows`. GitHub
+# fails to register such a file — it shows the file path where the workflow name should
+# be, and every run fails at the workflow level with zero jobs. So the trigger has to
+# live in a second file that names the first.
+#
+# `workflow_run` only fires for a workflow file present on the DEFAULT branch. Merge
+# both files to your default branch before expecting a seal on a pull request.
+on:
+  workflow_run:
+    workflows: ["scpe"]
+    types: [completed]
+
+permissions:
+  contents: read
+
+jobs:
+  seal:                         # TRUSTED — write token; never runs untrusted code
+    if: ${{ github.event.workflow_run.conclusion == 'success' }}
+    runs-on: ubuntu-latest
+    permissions:
+      pull-requests: write
+      # A job-level permissions block REPLACES the workflow default (it does not merge),
+      # so every unlisted scope is set to none. actions/download-artifact@v4 with run-id
+      # needs actions:read to reach a sibling run's artifact — without it the download
+      # fails and the gate never runs.
+      actions: read
+    steps:
+      - name: Download the verify job's results
+        uses: actions/download-artifact@v4
+        with:
+          name: scpe-results
+          run-id: ${{ github.event.workflow_run.id }}
+          github-token: ${{ github.token }}
+
+      - name: Post the seal comment (or the gate failure)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          pr="$(cat pr-number.txt)"
+          # The require DECISION was computed upstream, in the untrusted "verify"
+          # job (results.json's gate_pass) — this step only ever READS it, never
+          # recomputes it from raw contributor input. Missing key (require=false,
+          # the informational path) defaults to "pass": nothing changes.
+          gate_pass="$(python3 -c "import json; print(str(json.load(open('results.json')).get('gate_pass', True)).lower())")"
+          if [ "$gate_pass" = "false" ]; then
+            # results.json carries its own fail_message (naming the exact §8 status
+            # and the reason behind it, or level 1's missing disclosure) — use it
+            # verbatim; fall back to the generic message only for a results.json
+            # written by an older tag. Either way this is a READ, never a recompute.
+            msg="$(python3 -c "import json; d = json.load(open('results.json')); print(d.get('fail_message') or '❌ Not verifiable — this repository requires a signed SCPE contribution (spec scpe/0.1).')")"
+            gh pr comment "$pr" --repo "${{ github.repository }}" --body "$msg"
+            exit 1
+          fi
+          # The comment is rendered upstream too, in the same untrusted job, and
+          # posted here byte-for-byte. That does NOT weaken the split: this job
+          # already posted attacker-influenced text before — every field in the seal
+          # comes from the contributor's PR — so moving the rendering does not
+          # change the trust level of the CONTENT, only where the string is built.
+          # What it does change is that the obligation to neutralize that content
+          # (fence escaping, length caps) now sits in one tested renderer instead of
+          # in this YAML. The trusted job stays free of checkouts, installs and
+          # contributor code.
+          msg="$(python3 -c "import json; print(json.load(open('results.json')).get('comment') or '')")"
+          [ -n "$msg" ] && gh pr comment "$pr" --repo "${{ github.repository }}" --body "$msg"

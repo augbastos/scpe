@@ -164,7 +164,8 @@ anchors and what a verdict is worth under each.
 Add a workflow that verifies every PR and posts a seal. Set `require` to gate merges.
 
 ```yaml
-# .github/workflows/scpe.yml — see docs/workflows/scpe.yml for the fork-safe full version
+# .github/workflows/scpe.yml — the step. Copy BOTH files from docs/workflows/ for the
+# fork-safe version: scpe.yml (verify) and its companion scpe-seal.yml (post the seal).
 - uses: augbastos/scpe@v0.2
   with:
     level: "1"        # 1 = disclosure lint · 2 = signed envelope required
@@ -178,8 +179,11 @@ verifies the `scpe/0.1` envelope itself; `v0.1.x` verified a different, now-remo
 upgrading from it is a behaviour change and not a patch — [docs/MIGRATION.md](docs/MIGRATION.md)
 has the steps.
 
-The Action uses a fork-safe two-job split: the untrusted job (which runs contributor code) holds
-no secrets; only a trusted follow-up job posts the comment. Neither level installs anything in the
+The Action uses a fork-safe two-job split, and the two jobs live in **two files**: the untrusted
+job in `scpe.yml` (which runs contributor code) holds no secrets, and only the trusted follow-up
+job in `scpe-seal.yml` posts the comment. Two files is a GitHub constraint, not a preference — a
+workflow that names itself in its own `workflow_run` trigger fails to register at all. Neither
+level installs anything in the
 runner — both run stdlib-only Python straight out of the Action's own checkout, so the bytes that
 decide a merge are the bytes of the tag you pinned, not whatever a package index serves that day.
 Check out with `fetch-depth: 0`: level 2 recomputes the diff as `git diff <base>...<head>`, and the

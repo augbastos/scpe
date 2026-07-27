@@ -105,7 +105,9 @@ works, then tighten.
 Configure both inputs on the `augbastos/scpe` step in
 [`docs/workflows/scpe.yml`](workflows/scpe.yml), which is also where the two-job
 security model these levels sit on top of is written out in full: the job that
-runs contributor code holds no secrets, and the job that posts the comment never
-checks the contribution out. Copy that file rather than the four-line snippet in
-the README — in particular it checks out with `fetch-depth: 0`, without which
-level 2 has no base commit to recompute the diff against.
+runs contributor code holds no secrets, and the job that posts the comment —
+[`docs/workflows/scpe-seal.yml`](workflows/scpe-seal.yml) — never checks the
+contribution out. Copy **both** files rather than the four-line snippet in the
+README: the trusted half has to be a separate file (a workflow cannot name itself
+in `workflow_run`), and the untrusted half checks out with `fetch-depth: 0`,
+without which level 2 has no base commit to recompute the diff against.
