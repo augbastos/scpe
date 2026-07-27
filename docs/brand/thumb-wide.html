@@ -1,0 +1,44 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><link rel="stylesheet" href="_style.css">
+<style>
+  /* 1200 x 900 — the same lockup as thumb.html, at 4:3.
+     Portfolio grids (Upwork's among them) crop a square to their own aspect and can land
+     on empty page, which reads as a blank tile. This is the version for those slots;
+     thumb.html stays the square for anywhere that wants one. */
+  .frame { width: 1200px; height: 900px; }
+  .frame::before, .frame::after { content: ''; position: absolute; pointer-events: none; }
+  .frame::before { width: 780px; height: 780px; top: -400px; left: 70px;  background: var(--wash-1); }
+  .frame::after  { width: 740px; height: 740px; top: -360px; left: 500px; background: var(--wash-2); }
+  .frame .wash3 { position: absolute; width: 700px; height: 700px; bottom: -400px; left: 280px; background: var(--wash-3); pointer-events: none; }
+
+  .frame .scaler { width: 620px; transform: scale(1.45); top: 176px; left: 88px; z-index: 1; }
+  .mark { width: 88px; height: 88px; display: block; margin: 0 0 40px; }
+  .square-word {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 88px; font-weight: 600; letter-spacing: 11px; line-height: 1;
+  }
+  .expand { font-size: 27px; font-weight: 500; letter-spacing: -.5px; margin-top: 26px; }
+  .strap {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 12px; letter-spacing: .8px; color: var(--body);
+    margin-top: 56px; display: flex; flex-direction: column; gap: 9px;
+  }
+  .strap .rule { height: 1px; background: var(--line); margin-bottom: 7px; }
+  .strap .meta { color: var(--faint); }
+</style>
+</head>
+<body>
+<div class="frame">
+  <div class="wash3"></div>
+  <div class="scaler">
+    <svg class="mark" viewBox="0 0 64 64" xmlns="http://www.w3.org/2000/svg"><rect width="64" height="64" fill="#0D1117"/><path fill="#E9EDF2" d="M10 12H26V19H17V45H26V52H10ZM54 12H38V19H47V45H38V52H54Z"/><path fill="#898CF2" d="M32 22.5 41.5 32 32 41.5 22.5 32Z"/></svg>
+    <div class="square-word">SCPE</div>
+    <div class="expand">Signed Contribution Provenance Envelope</div>
+    <div class="strap">
+      <div class="rule"></div>
+      <div>Merge code, not claims.</div>
+      <div class="meta">scpe/0.1 &nbsp;·&nbsp; code licensed Apache-2.0</div>
+    </div>
+  </div>
+</div>
+</body></html>
