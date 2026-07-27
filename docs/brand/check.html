@@ -1,0 +1,42 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>fit check</title>
+<style>
+  body { margin:0; font: 13px/1.5 monospace; }
+  iframe { border:0; display:block; }
+  .hold { position:absolute; left:-99999px; top:0; }
+</style>
+</head>
+<body>
+<div class="hold" id="hold"></div>
+<script>
+  // Every card is rendered off-screen at its own frame size, then measured for
+  // overflow. Eyeballing five screenshots one by one is how the first pass missed
+  // a card whose last row was clipped.
+  const CARDS = [
+    ['card1.html', 1600, 900],
+    ['card2.html', 1600, 900],
+    ['card3.html', 1600, 900],
+    ['card4.html', 1600, 900],
+    ['thumb.html', 1200, 1200],
+  ];
+  window.fitReport = async () => {
+    const hold = document.getElementById('hold');
+    hold.innerHTML = '';
+    const out = [];
+    for (const [file, w, h] of CARDS) {
+      const f = document.createElement('iframe');
+      f.width = w; f.height = h; f.src = file + '?t=' + Date.now();
+      hold.appendChild(f);
+      await new Promise(r => f.addEventListener('load', r, { once: true }));
+      const d = f.contentDocument;
+      await d.fonts.ready;
+      const s = d.querySelector('.scaler');
+      const r = s.getBoundingClientRect();
+      out.push({ file, frame: h, bottom: Math.round(r.bottom),
+                 headroom: Math.round(h - r.bottom),
+                 fits: r.bottom <= h - 12 });
+    }
+    return out;
+  };
+</script>
+</body></html>

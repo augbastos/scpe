@@ -1,0 +1,186 @@
+/* SCPE brand tokens — EXTRACTED FROM THE LIVE SITE (augbastos.github.io/scpe),
+   not authored here. The site is the canonical style; this file is a transcript of it.
+   If the site changes, re-read its computed styles and update this file, then re-render.
+
+   Every value below was read with getComputedStyle on the published page.        */
+
+@import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500;600&display=swap');
+
+:root {
+  /* surfaces */
+  --page:      #FFFFFF;                 /* body background            */
+  --panel:     rgba(252, 253, 254, .74);/* card fill                  */
+  --chip:      rgba(240, 242, 247, .8); /* install-command chip fill  */
+  --line:      #E7EAEF;                 /* card border / hairline     */
+  --line-2:    #D8DDE5;                 /* inline-code border         */
+
+  /* ink */
+  --ink:       #171A1F;                 /* headings, values           */
+  --body:      #5A6472;                 /* paragraphs                 */
+  --faint:     #8A94A3;                 /* footnotes                  */
+
+  /* accents */
+  --indigo:    #4F51D8;                 /* section numbers, mono labels */
+  --indigo-d:  #33349E;
+  --green:     #2F7D52;                 /* verified text              */
+  --green-bg:  #58C983;                 /* VERIFIED pill fill         */
+  --red-bg:    #5C2B2E;                 /* FAILING CHECK pill fill    */
+  --pill-ink:  #0D1117;
+
+  /* the hero wash, verbatim from the site */
+  --wash-1: radial-gradient(closest-side, rgba(79, 81, 216, .48), rgba(79, 81, 216, 0) 78%);
+  --wash-2: radial-gradient(closest-side, rgba(164, 140, 240, .52), rgba(164, 140, 240, 0) 76%);
+  --wash-3: radial-gradient(closest-side, rgba(137, 140, 242, .44), rgba(137, 140, 242, 0) 78%);
+  --wash-4: radial-gradient(closest-side, rgba(110, 139, 232, .4), rgba(110, 139, 232, 0) 76%);
+}
+
+* { margin: 0; padding: 0; box-sizing: border-box; }
+
+html, body {
+  background: var(--page);
+  color: var(--ink);
+  font-family: 'IBM Plex Sans', system-ui, -apple-system, sans-serif;
+  font-size: 16px;
+  -webkit-font-smoothing: antialiased;
+  overflow: hidden;
+}
+
+/* ── frame ─────────────────────────────────────────────────────────────────
+   The card is the site, magnified. Content is laid out at the site's own
+   1040px column and exact px values, then scaled as a whole — so the
+   proportions are the site's, not a re-interpretation of them.             */
+.frame { width: 1600px; height: 900px; position: relative; overflow: hidden; }
+.frame .scaler {
+  width: 1040px;
+  transform: scale(1.4);
+  transform-origin: top left;
+  position: absolute;
+  /* per-card: denser sections start higher so the block still reads centred */
+  top: var(--top, 56px); left: 72px;
+}
+
+/* ── header, as on the site ───────────────────────────────────────────── */
+.top { display: flex; align-items: center; gap: 12px; padding-bottom: 22px; }
+.top svg { width: 17px; height: 17px; display: block; }
+.top .wordmark {
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 13px; font-weight: 600; letter-spacing: 1.9px;
+}
+.top .ver {
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 11.5px; color: var(--faint); letter-spacing: .5px;
+}
+.top .right {
+  margin-left: auto;
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 11px; color: var(--indigo); letter-spacing: 1.54px;
+}
+
+/* ── section eyebrow: number + label + hairline, exactly the site's ────── */
+.eyebrow { display: flex; align-items: center; gap: 12px; margin: 30px 0 24px; }
+.eyebrow .num {
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 11px; font-weight: 500; letter-spacing: 1.54px; color: var(--indigo);
+}
+.eyebrow .label {
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 10.5px; font-weight: 500; letter-spacing: 1.68px;
+  text-transform: uppercase; color: var(--body);
+}
+.eyebrow .rule { flex: 1; height: 1px; background: var(--line); }
+
+/* ── type scale, verbatim ─────────────────────────────────────────────── */
+h1 { font-size: 48px; font-weight: 500; letter-spacing: -1.2px; line-height: 54.72px; }
+h2 { font-size: 29px; font-weight: 500; letter-spacing: -.522px; line-height: 38.28px; }
+p  { font-size: 16px; font-weight: 400; line-height: 27.2px; color: var(--body); max-width: 640px; }
+p b, p strong { color: var(--ink); font-weight: 600; }
+p + p { margin-top: 14px; }
+.lede { margin-top: 16px; }
+
+code {
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 13px; color: var(--ink);
+}
+code.boxed {
+  font-size: 12px; background: #fff;
+  border: 1px solid var(--line-2); border-radius: 4px; padding: 5px 8px;
+}
+
+/* ── panel: the site's card ───────────────────────────────────────────── */
+.panel {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 20px;
+}
+.panel .head {
+  display: flex; align-items: center; gap: 10px;
+  padding-bottom: 16px; border-bottom: 1px solid var(--line);
+}
+.panel .head svg { width: 15px; height: 15px; display: block; }
+.panel .head .name {
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 12px; font-weight: 500; letter-spacing: 1.6px; text-transform: uppercase;
+}
+.panel .title { font-size: 16px; font-weight: 500; }
+.panel .note { font-size: 14px; line-height: 21px; color: var(--body); }
+.panel .foot {
+  font-size: 12px; line-height: 18px; color: var(--faint);
+  margin-top: 16px; max-width: 46ch;
+}
+
+/* status pills */
+.pill {
+  margin-left: auto;
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 11px; font-weight: 600; letter-spacing: 1.3px;
+  padding: 4px 9px; border-radius: 5px;
+}
+.pill.ok   { background: var(--green-bg); color: var(--pill-ink); }
+.pill.fail { background: var(--red-bg);   color: #F1E4E4; }
+
+/* field rows, as in the seal card */
+.rows { margin-top: 4px; }
+.row {
+  display: flex; align-items: baseline; gap: 24px;
+  padding: 12px 0; border-bottom: 1px solid var(--line);
+}
+.row:last-child { border-bottom: 0; }
+.row .k {
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 12.5px; line-height: 18.75px; color: var(--body);
+  width: 104px; flex: none;
+}
+.row .v { font-size: 14px; line-height: 21px; }
+.row .v.mono { font-family: 'IBM Plex Mono', monospace; font-size: 13px; }
+.row .v .ok { color: var(--green); font-weight: 500; }
+
+/* three-up grid of panels */
+.grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; margin-top: 22px; }
+.grid .panel .lang { font-size: 16px; font-weight: 500; margin-bottom: 8px; }
+.grid .panel .tag {
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 10.5px; font-weight: 500; letter-spacing: 1.68px; text-transform: uppercase;
+}
+.grid .panel .tag.ref { color: var(--indigo); }
+.grid .panel .tag.ind { color: var(--body); }
+
+.two { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-top: 22px; align-items: start; }
+
+/* ── install chip, straight off the site's hero ───────────────────────── */
+.chip {
+  display: inline-flex; align-items: center; gap: 10px;
+  background: var(--chip); border: 1px solid var(--line); border-radius: 10px;
+  padding: 13px 14px; margin-top: 26px;
+}
+.chip .dollar { font-family: 'IBM Plex Mono', monospace; font-size: 13.5px; color: var(--faint); }
+.chip .cmd    { font-family: 'IBM Plex Mono', monospace; font-size: 13.5px; color: var(--ink); }
+.chip .copy {
+  margin-left: 8px; font-family: 'IBM Plex Mono', monospace; font-size: 11px;
+  color: var(--body); background: #fff; border: 1px solid var(--line-2);
+  border-radius: 6px; padding: 4px 9px;
+}
+.meta {
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 11.5px; letter-spacing: .5px; color: var(--faint); margin-top: 16px;
+}

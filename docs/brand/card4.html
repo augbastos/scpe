@@ -1,0 +1,46 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><link rel="stylesheet" href="_style.css"></head>
+<body>
+<div class="frame" style="--top:50px">
+  <div class="scaler">
+    <div class="top">
+      <svg viewBox="0 0 64 64" xmlns="http://www.w3.org/2000/svg"><rect width="64" height="64" fill="#0D1117"/><path fill="#E9EDF2" d="M10 12H26V19H17V45H26V52H10ZM54 12H38V19H47V45H38V52H54Z"/><path fill="#898CF2" d="M32 22.5 41.5 32 32 41.5 22.5 32Z"/></svg>
+      <span class="wordmark">SCPE</span>
+      <span class="ver">scpe/0.1</span>
+    </div>
+
+    <div class="eyebrow"><span class="num">04</span><span class="label">The seal</span><span class="rule"></span></div>
+
+    <h2>A decision, first.</h2>
+
+    <p class="lede">SCPE ships as a GitHub Action, live on the Marketplace. It posts a
+    decision-first seal on a pull request: identity, key source, risk band, tests, provenance.</p>
+
+    <div class="two">
+      <div class="panel">
+        <div class="head">
+          <svg viewBox="0 0 64 64" xmlns="http://www.w3.org/2000/svg"><rect width="64" height="64" fill="#0D1117"/><path fill="#E9EDF2" d="M10 12H26V19H17V45H26V52H10ZM54 12H38V19H47V45H38V52H54Z"/><path fill="#898CF2" d="M32 22.5 41.5 32 32 41.5 22.5 32Z"/></svg>
+          <span class="name">SCPE Seal</span>
+          <span class="pill ok">VERIFIED</span>
+        </div>
+        <div class="rows">
+          <div class="row"><span class="k">identity</span><span class="v"><span class="ok">@augbastos — signature verified</span></span></div>
+          <div class="row"><span class="k">key_source</span><span class="v mono">forge — fetched live from the provider</span></div>
+          <div class="row"><span class="k">risk band</span><span class="v">LOW — 0 of 13 rules matched</span></div>
+          <div class="row"><span class="k">provenance</span><span class="v">AI-assisted, declared inside the signed bytes</span></div>
+        </div>
+        <div class="foot">Real output, not a mock-up: the verifier's verdict on a signed
+        contribution, checked against the key github.com publishes for that account.</div>
+      </div>
+
+      <div class="panel">
+        <div class="head"><span class="name">require: true</span><span class="pill fail">FAILING CHECK</span></div>
+        <div class="note" style="margin-top:14px">With <code>require: true</code>, an unattested
+        pull request becomes a failing check instead of a comment.</div>
+        <div class="foot" style="margin-top:22px">The seal is a report, never an approval. It
+        says who signed and that nothing moved. Whether the code is any good stays a human call.</div>
+      </div>
+    </div>
+  </div>
+</div>
+</body></html>
