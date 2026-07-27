@@ -67,9 +67,9 @@ keys github.com publishes for that account:
 +--<+> scpe -------------------------- VERIFIED / LOW RISK --+
 |                                                            |
 | contributor  @augbastos   identity verified                |
-| change       +52 / -16,  6 files                           |
+| change       +27 / -1,  2 files                            |
 | risk         LOW   (0 of 13 rules matched)                 |
-| tests        not run   [none]                              |
+| tests        no test runner detected   [none]              |
 | made with    AI-assisted                                   |
 | keys         forge - fetched live from the provider        |
 | profile      SCPE-C  (advisory, not checked)               |
