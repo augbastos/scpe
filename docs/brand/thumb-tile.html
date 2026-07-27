@@ -17,14 +17,17 @@
   /* the header row, at the site's px */
   .lock {
     position: relative; z-index: 1;
-    display: flex; align-items: center; gap: 12px;
-    transform: scale(13.4);
+    /* The site's header sets this gap at 12px against a 17px mark. Tightened here because
+       the wordmark's 1.9px tracking adds internal air that reads as a second gap once the
+       block is this large — the lockup has to hold together at 190px, not at 13px. */
+    display: flex; align-items: center; gap: 6px;
+    transform: scale(15.2);
   }
   .lock svg { width: 17px; height: 17px; display: block; }
   .lock .word {
     font-family: 'IBM Plex Mono', monospace;
     font-size: 13px; font-weight: 600; letter-spacing: 1.9px;
-    text-indent: 1.9px;   /* tracking leaves a trailing gap; nudge back to true centre */
+    margin-right: -1.9px;   /* letter-spacing trails the E; pull it back so the lockup centres optically */
   }
 </style>
 </head>
