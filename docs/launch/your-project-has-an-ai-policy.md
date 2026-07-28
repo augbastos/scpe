@@ -5,11 +5,14 @@ Every claim here is meant to survive a stranger checking it.*
 
 ---
 
-In 2026, open source started writing rules for AI. OpenSSL now asks contributors to declare
-AI use in each commit with an `Assisted-by` trailer. MicroPython added a checkbox to its pull
-request template: *I did not use generative AI* / *I used it, but a human checked the code.*
-Fedora, the EFF, and others published their own policies. curl's maintainer shut down a
-six-year bug-bounty program after a flood of AI-generated security reports.
+In 2026, open source started writing rules for AI. OpenSSL now asks contributors to name the
+tool in the commit itself — `Assisted-by: {agent}:{model}`, so `Assisted-by: Claude:claude-sonnet-4-6`,
+one trailer per tool. MicroPython added a checkbox to its pull request template: *I did not use
+generative AI tools when creating this PR* / *I used generative AI tools, but a human has checked
+the code and is responsible for it.* Fedora, the EFF, and others published their own policies.
+And curl ended a bug-bounty that had run since April 2019, after the confirmed-vulnerability
+rate on incoming reports fell below one in twenty — "an explosion in AI slop reports combined
+with a lower quality even in the reports that were not obvious slop."
 
 The policies are the easy part. Here's the uncomfortable question none of them answer:
 
