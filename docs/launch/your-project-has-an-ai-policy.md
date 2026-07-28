@@ -18,22 +18,50 @@ The policies are the easy part. Here's the uncomfortable question none of them a
 
 **When a pull request comes in, who checks that the disclosure is actually there?**
 
-Right now, the answer is: a human, eventually, if they remember. A policy in `CONTRIBUTING.md`
-is a request, not a gate. A contributor can skip the trailer, leave the checkbox blank, or open
-a PR that never mentions the tool that wrote most of it — and nothing stops the merge except
-someone noticing. That worked when a maintainer got three PRs a day. It does not scale to a
-world where agents open them by the hundred.
+I assumed the answer was "a human, eventually, if they remember." Then I asked two of the
+projects named above, in public, and was told otherwise. This section is what they said, because
+publishing the guess after being corrected would be a strange thing for a provenance tool to do.
 
-## The smallest thing that helps
+**OpenSSL checks.** Every pull request triggers their CLA service, which reads each non-trivial
+commit, looks for the `Assisted-by:` trailer — with `Co-authored-by:` naming a known AI tool as
+a backstop — and posts a `cla-check` commit status. What it enforces is the *consequence*: an
+AI-assisted commit from a signer still on CLA 1.0 fails and is held under a `hold: cla required`
+label until they re-sign 1.1. Signers already on 1.1 pass either way. So the trailer is
+load-bearing for the licensing decision rather than for presence, and whether presence itself is
+checked for 1.1 signers is a question I have open with them.
 
-You don't need cryptography to close the first gap. You need enforcement of the policy you
-already wrote.
+**MicroPython does it by eye, and says it works.** A collaborator there told me omission is rare,
+and that the few cases he can recall were contributors circumventing the template rather than
+leaving the box blank — which a lint on the box would not catch anyway. He also reads past the
+box, because some authors add context a checkbox cannot hold.
 
-So start there. **Level 1** is a GitHub Action that does one thing: check that the AI-use
-disclosure is present — the `Assisted-by` trailer, or the checkbox your template already has. No
-signing, no new tools, zero cost to the contributor. If your repository already *asks* for
-disclosure, this is the check that makes the ask real. A PR without it gets flagged before a
-human spends a minute on it.
+Then he said the thing that should worry anyone building a gate: *"most authors quickly correct
+when reminded by a human, less so when CI is showing ❌."* That is the strongest argument against
+this essay's original framing, and it came from someone with more evidence than I have. If a red
+check produces **less** compliance than a person asking, automating the reminder is not
+self-evidently an improvement, and the word *gate* is worse than unnecessary.
+
+What survives is narrower than what I started with. A policy in `CONTRIBUTING.md` is still a
+request rather than a gate, and a contributor can still open a pull request that never mentions
+the tool that wrote most of it. What I can no longer claim is that nobody noticed the problem:
+one of the first two projects I asked had already built the automation I was guessing did not
+exist, and the other has data suggesting it would not help them.
+
+## The smallest thing that might help
+
+**Level 1** is a GitHub Action that does one thing: check that the AI-use disclosure is present —
+the `Assisted-by` trailer, or the checkbox your template already has. No signing, no new tools,
+zero cost to the contributor.
+
+Whether that is worth turning on looks like a question about your project rather than a general
+truth, which is not how this paragraph originally read. At MicroPython's volume, with reviewers
+who read past the box, the answer appears to be no — and the reason is not "we haven't got to
+it", it is that a human's reminder works better than a red check. The case for it is a project
+without that reviewer bandwidth, or one where the volume already exceeds what noticing can
+cover.
+
+So: a reviewer aid, not a gate. `require: "false"` — report, never block a merge — is the
+default for that reason, and stays the default.
 
 That's it. That's the whole first level. It's deliberately boring, because boring is what gets
 adopted.
