@@ -6,7 +6,6 @@ image link). This module only touches README.md — it never commits, pushes, or
 the network; wiring into git is the caller's decision."""
 from __future__ import annotations
 
-import subprocess
 from pathlib import Path
 
 # Idempotency anchor: an invisible-in-rendered-markdown HTML comment. We key "already
@@ -14,40 +13,40 @@ from pathlib import Path
 # without `init` re-inserting a duplicate.
 BADGE_MARK = "<!-- scpe-optin -->"
 
-_DEFAULT_SITE = "https://scpe.dev"
+# The badge is served from the project's own GitHub Pages site and links to the repository.
+# It used to point at `scpe.dev`, a domain that was never registered. `scpe init` therefore
+# wrote a broken image into a stranger's README — and an unregistered domain baked into a
+# supply-chain tool is a takeover waiting to happen: whoever registered it would inherit every
+# badge already written. The link was worse than the image. It carried `/go?repo=<your repo>`,
+# a callback announcing the adopting repository to a host, in a project whose front page
+# promises there is no SCPE server. Both are gone. Detection was never the image's job anyway:
+# that is BADGE_MARK, which is inert text and reaches nothing.
+_DEFAULT_SITE = "https://augbastos.github.io/scpe"
+_PROJECT_URL = "https://github.com/augbastos/scpe"
 
 
-def badge_markdown(repo_url: str, site: str = _DEFAULT_SITE) -> str:
-    """The two-line badge block: the detection anchor followed by the clickable image link."""
+def badge_markdown(site: str = _DEFAULT_SITE) -> str:
+    """The two-line badge block: the detection anchor followed by the clickable image link.
+
+    Takes no repository URL. It used to, and that was the defect: the URL existed only to be
+    interpolated into a callback. The badge links to the protocol, not to a service that would
+    have to be told about you."""
     return (f"{BADGE_MARK}\n"
-            f"[![Contribute with SCPE]({site}/badge.svg)]({site}/go?repo={repo_url})")
+            f"[![Contribute with SCPE]({site}/badge.svg)]({_PROJECT_URL})")
 
 
-def _origin_url(repo_path: Path) -> str | None:
-    """Best-effort `origin` remote URL. Returns None on any failure (no remote, not a git
-    repo, git absent) — the caller falls back to a placeholder rather than erroring."""
-    try:
-        proc = subprocess.run(
-            ["git", "-C", str(repo_path), "remote", "get-url", "origin"],
-            capture_output=True, text=True)
-    except OSError:
-        return None
-    if proc.returncode != 0:
-        return None
-    return proc.stdout.strip() or None
-
-
-def init_repo(repo_path: Path, *, repo_url: str | None = None,
-              site: str = _DEFAULT_SITE) -> bool:
+def init_repo(repo_path: Path, *, site: str = _DEFAULT_SITE) -> bool:
     """Insert the opt-in badge into `repo_path/README.md`. Returns True iff the file changed.
 
     Idempotent: if the badge marker is already present the file is left byte-for-byte intact
     and False is returned. Creates the README if absent, otherwise inserts the badge after the
-    first markdown heading (or prepends it when there is no heading)."""
+    first markdown heading (or prepends it when there is no heading).
+
+    This used to look up the repository's `origin` remote so the URL could be interpolated into
+    a `/go?repo=` callback. The callback is gone, so the lookup is gone with it — nothing here
+    shells out, and the adopting repository's identity is never read, let alone sent."""
     repo_path = Path(repo_path)
-    if repo_url is None:
-        repo_url = _origin_url(repo_path) or "your repo URL"
-    badge = badge_markdown(repo_url, site)
+    badge = badge_markdown(site)
     readme = repo_path / "README.md"
 
     if not readme.exists():

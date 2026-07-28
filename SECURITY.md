@@ -62,10 +62,29 @@ will not be treated as an advisory.
 
 | Version | Supported | Notes |
 |---|---|---|
-| `v0.2.2` and later `0.2.x` | yes | |
-| `v0.2.1` | **no — known flaw** | Accepts a valid envelope replayed from another repository. See below. |
+| `v0.2.3` and later `0.2.x` | yes | |
+| `v0.2.2` | **no — known flaw** | `scpe init` writes an unregistered domain into your README. See below. |
+| `v0.2.1` | **no — known flaw** | Both of the above, plus it accepts a valid envelope replayed from another repository. |
 | `v0.2` | **no — known flaw** | Same, plus a seal that reads `VERIFIED` on unattested pull requests. |
 | `v0.1.x` | **no** | Its level-2 path verifies an envelope format that is not in `spec/`. See [docs/MIGRATION.md](docs/MIGRATION.md). |
+
+### Known flaw in `v0.2.2` and earlier — fixed in `v0.2.3`
+
+**If you ever ran `scpe init`, open your README and delete the badge block.**
+
+`scpe init` had `https://scpe.dev` welded into `optin.py`, with no CLI flag to override it.
+That domain has no DNS record and never did, so the project's own adoption command wrote a
+broken image into the README of anyone who ran it — and left an unregistered domain in the
+front page of their repository. Whoever registered `scpe.dev` would have inherited every
+badge already written.
+
+The link was worse than the image: `scpe.dev/go?repo=<your repository URL>`, a callback
+announcing the adopting repository to a host, in a project that promises there is no SCPE
+server. The badge now points at the project's GitHub Pages site and links to the repository;
+the callback and the parameter that fed it are gone.
+
+Nothing in the protocol is affected. No envelope, signature, key or verdict changes, and no
+manifest needs re-signing.
 
 ### Known flaw in `v0.2.1` and earlier — fixed in `v0.2.2`
 

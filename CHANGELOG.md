@@ -24,6 +24,51 @@ is untouched — not that nothing moved. Read the entry before bumping a pin.
 
 ---
 
+## [0.2.3] — 2026-07-28
+
+**If you ever ran `scpe init`, open your README and delete the badge block.** It points at a
+domain that does not exist. Nothing in the protocol is affected — no envelope, no signature,
+no verdict changes.
+
+### Security
+
+- **`scpe init` wrote an unregistered domain into other people's READMEs.** `optin.py` had
+  `_DEFAULT_SITE = "https://scpe.dev"` welded in, and the CLI exposed no way to override it.
+  `scpe.dev` has no DNS record and never did. Two failures from one constant.
+
+  The visible one: the project's own adoption command inserted a broken image at the top of
+  whatever repository ran it. The serious one: an unregistered domain baked into a
+  supply-chain tool is a takeover waiting on a credit card. Whoever registered `scpe.dev`
+  would have inherited every badge already written, on every repository that had opted in,
+  and a provenance project would have been the delivery mechanism.
+
+  Worse than either, the badge *linked* to `scpe.dev/go?repo=<the adopting repo's URL>` — a
+  callback announcing who adopted, in a project whose front page says there is no SCPE server
+  and nothing to shut down. The README and the code disagreed, and the code is what people ran.
+
+  The badge now points at `https://augbastos.github.io/scpe/badge.svg`, which is served, and
+  links to the repository. The callback is gone. `--site` exists so that no domain is welded
+  in without an escape hatch.
+
+- **The test suite could not have caught it.** `tests/test_optin.py` asserted the dead URLs
+  verbatim, so a passing test proved the constant had not moved and nothing about whether it
+  was ever right. Replaced with property assertions: no unregistered domain, no callback
+  shape, an overridable site. A green test pinning a defect in place is worth more attention
+  than the defect.
+
+### Removed
+
+- **`scpe init --url`, and the `origin` lookup behind it.** Both existed only to interpolate
+  the adopting repository's URL into the callback. With the callback gone they had no purpose,
+  so `optin.py` no longer imports `subprocess` and reads no git state at all. `init_repo()`
+  and `badge_markdown()` lost their `repo_url` parameters. A breaking API change in a pre-1.0
+  line, taken deliberately: a parameter that quietly does nothing is worse than one removed.
+
+Found by an adversarial review of this repository's documentation against its own code. The
+claim under test was the front page's "there is no SCPE server."
+
+---
+
 ## [0.2.2] — 2026-07-27
 
 **Security release. If you pin `v0.2.1` or `v0.2`, move to `v0.2.2`.** Everything below was

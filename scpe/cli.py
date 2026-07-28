@@ -32,7 +32,7 @@ from pathlib import Path
 from reference.standalone import verify_envelope as _ref
 from scpe import (__version__, context as _context, results as _results, seal as _seal,
                   testrun, verify as _verify)
-from scpe.optin import init_repo
+from scpe.optin import _DEFAULT_SITE, init_repo
 
 
 # ---------------------------------------------------------------------------- verify
@@ -185,7 +185,7 @@ def _cmd_inspect(args) -> int:
 # ------------------------------------------------------------------------------ init
 
 def _cmd_init(args) -> int:
-    changed = init_repo(Path(args.repo), repo_url=args.url)
+    changed = init_repo(Path(args.repo), site=args.site)
     print("badge added to README.md" if changed else "already opted in — README unchanged")
     return 0
 
@@ -267,7 +267,10 @@ def main(argv: list[str] | None = None) -> int:
 
     it = sub.add_parser("init", help="add the machine-detectable opt-in badge to a repo's README")
     it.add_argument("--repo", default=".")
-    it.add_argument("--url", default=None, help="repo URL for the badge link (default: origin)")
+    it.add_argument("--site", default=_DEFAULT_SITE,
+                    help="where the badge image is served from. No reason to change it unless "
+                         "you mirror the project; it exists so no domain is welded in without "
+                         "an escape hatch.")
     it.set_defaults(fn=_cmd_init)
 
     args = parser.parse_args(argv)
