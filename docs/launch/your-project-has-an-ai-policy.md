@@ -1,6 +1,6 @@
 # Your project has an AI policy. Who enforces it?
 
-*Launch essay for SCPE. Status: spec `scpe/0.1`, tooling `v0.2.2`, **no external adoption**.
+*Launch essay for SCPE. Status: spec `scpe/0.1`, tooling `v0.2.3`, **no external adoption**.
 Every claim here is meant to survive a stranger checking it.*
 
 ---
@@ -164,7 +164,7 @@ never will be one.
 Turning it on is two files and one pinned step:
 
 ```yaml
-- uses: augbastos/scpe@v0.2.2
+- uses: augbastos/scpe@v0.2.3
   with:
     level: "1"        # 1 = disclosure lint · 2 = signed envelope required
     require: "true"   # fail the check on anything not verifiable

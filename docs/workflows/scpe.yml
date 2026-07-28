@@ -22,7 +22,7 @@ name: scpe
 # Measured on a live repository — one file with the self-reference never registered,
 # the identical file without it registered and ran green.
 #
-# GATE MODE (policy, opt-in): set `require: "true"` on the `augbastos/scpe@v0.2.2` step
+# GATE MODE (policy, opt-in): set `require: "true"` on the `augbastos/scpe@v0.2.3` step
 # below to make this repository REQUIRE a signed scpe contribution. A PR with no
 # attestation, or any status other than "verified" (spec scpe/0.1 §8), then FAILS the
 # companion's "seal" job and posts "❌ Not verifiable" instead of the usual report.
@@ -72,7 +72,7 @@ jobs:
       - run: pip install pytest
 
       - id: seal                       # deterministic risk + tests, no LLM, no secrets
-        uses: augbastos/scpe@v0.2.2
+        uses: augbastos/scpe@v0.2.3
         with:
           require: "false"             # flip to "true" to require a signed contribution
           # level: "1"                 # zero-friction mode: AI-disclosure lint only,

@@ -39,7 +39,7 @@ That resolves `scpe-protocol` from PyPI **on every run, with no version constrai
 unpinned dependency hiding behind a pinned tag. That pin has had two distinct failure modes,
 and it is now in the second one.
 
-**Today.** PyPI serves `0.2.2`, so the unconstrained resolve picks up `0.2.x`, where
+**Today.** PyPI serves `0.2.3`, so the unconstrained resolve picks up `0.2.x`, where
 `scpe seal` takes `--envelope` as a flag and accepts no positional argument. The `v0.1.x`
 invocation is rejected by the argument parser and the step exits non-zero. **A workflow nobody
 edited is already red.** That is the good failure: it is loud, and it points at the pin.
@@ -59,7 +59,7 @@ body" (the spec's §9 transport), not "check nothing". If your workflow sets `en
 explicitly, drop the line unless you really do commit an envelope file.
 
 ```yaml
-- uses: augbastos/scpe@v0.2.2
+- uses: augbastos/scpe@v0.2.3
   with:
     level: "1"        # 1 = disclosure lint · 2 = signed envelope required
     require: "true"   # fail the check on anything not verifiable
@@ -150,7 +150,7 @@ Nothing about your key changes. It is the same SSH key already on your git host,
 account that publishes no files, so pip reports no matching distribution — it will not silently
 install someone else's code, but it will not install this one either.
 
-The zero-install paths (`pipx run`, `uvx`) resolve to the newest release, which is `0.2.2`.
+The zero-install paths (`pipx run`, `uvx`) resolve to the newest release, which is `0.2.3`.
 Constrain the version anyway, so a later release cannot silently change what decides your pull
 requests:
 

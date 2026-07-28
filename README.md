@@ -16,7 +16,7 @@
   <img alt="spec" src="https://img.shields.io/badge/spec-scpe%2F0.1-41c257?style=flat-square&labelColor=0b0b0c">
   <img alt="python" src="https://img.shields.io/badge/python-3.11%2B-41c257?style=flat-square&labelColor=0b0b0c">
   <img alt="license" src="https://img.shields.io/badge/code-Apache--2.0-41c257?style=flat-square&labelColor=0b0b0c">
-  <img alt="status" src="https://img.shields.io/badge/v0.2.2-early-d29922?style=flat-square&labelColor=0b0b0c">
+  <img alt="status" src="https://img.shields.io/badge/v0.2.3-early-d29922?style=flat-square&labelColor=0b0b0c">
 </p>
 
 <p align="center">
@@ -176,7 +176,7 @@ Add a workflow that verifies every PR and posts a seal. Set `require` to gate me
 ```yaml
 # .github/workflows/scpe.yml — the step. Copy BOTH files from docs/workflows/ for the
 # fork-safe version: scpe.yml (verify) and its companion scpe-seal.yml (post the seal).
-- uses: augbastos/scpe@v0.2.2
+- uses: augbastos/scpe@v0.2.3
   with:
     level: "1"        # 1 = disclosure lint · 2 = signed envelope required
     require: "true"   # fail the check on anything not verifiable
@@ -204,8 +204,11 @@ Pin the exact tag while the protocol is pre-1.0.
   in `spec/`, so upgrading from it is a behaviour change and not a patch —
   [docs/MIGRATION.md](docs/MIGRATION.md) has the steps.
 
-**Which tag to be on:** `v0.2.2`. `v0.2.1` and `v0.2` accept a valid envelope replayed from
-another repository (see [SECURITY.md](SECURITY.md)); `v0.2.2` refuses it.
+**Which tag to be on:** `v0.2.3`. `v0.2.1` and `v0.2` accept a valid envelope replayed from
+another repository; `v0.2.2` and earlier write an unregistered domain into your README if you
+run `scpe init`. Both are in [SECURITY.md](SECURITY.md). The second one does not touch the
+Action, so a workflow pinned at `v0.2.2` is not exposed to it — but if you ever ran `scpe init`,
+open your README and delete the badge block.
 
 The Action uses a fork-safe two-job split, and the two jobs live in **two files**: the untrusted
 job in `scpe.yml` (which runs contributor code) holds no secrets, and only the trusted follow-up
@@ -279,7 +282,7 @@ in-process, which is what a batch consumer sees after import cost is paid once. 
 
 ## Status
 
-**v0.2.2 — early.** This is a specification plus a reference implementation (a single-file
+**v0.2.3 — early.** This is a specification plus a reference implementation (a single-file
 verifier, a producer, and a maintainer-side Action). The full test suite — including a 100-PR
 stress proof and a local end-to-end — runs on every push; the CI badge above is its live
 result. Two more independent verifiers, in Go and Rust, reach the same verdict as the Python
