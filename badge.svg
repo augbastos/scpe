@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="132" height="20" role="img" aria-label="scpe: opt-in">
+  <title>scpe: opt-in</title>
+  <!-- Colours are the site's tokens verbatim: --ink #171A1F, --indigo #4F51D8.
+       No webfont: a README badge is loaded inside <img>, where GitHub blocks
+       @font-face, so the stack falls back to whatever monospace the viewer has.
+       That is the same stack GitHub's own UI uses. -->
+  <rect width="132" height="20" rx="3" fill="#171A1F"/>
+  <rect x="49" width="83" height="20" rx="3" fill="#4F51D8"/>
+  <rect x="49" width="6" height="20" fill="#4F51D8"/>
+  <g font-family="ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" font-size="11">
+    <text x="10" y="14" fill="#FFFFFF">scpe</text>
+    <text x="61" y="14" fill="#FFFFFF">opt-in</text>
+  </g>
+</svg>
