@@ -14,7 +14,7 @@ And curl ended a bug-bounty that had run since April 2019, after the confirmed-v
 rate on incoming reports fell below one in twenty — "an explosion in AI slop reports combined
 with a lower quality even in the reports that were not obvious slop."
 
-The policies are the easy part. Here's the uncomfortable question none of them answer:
+Writing the policy is the easy part. The question underneath it is:
 
 **When a pull request comes in, who checks that the disclosure is actually there?**
 
@@ -145,7 +145,8 @@ Linux kernel's mailing list for years. They resolve the signer against a keyring
 keeps in its own repository; SCPE resolves against the keys the forge already publishes for the
 account. That is the whole delta, and it cuts both ways: nothing for a project to curate, and a
 forge to depend on. The other half of the idea here is meeting the current moment — the
-AI-policy wave that gave every project a rule and no way to enforce it.
+AI-policy wave, where the rules arrived first and the question of what to do about them is
+still open, including whether anything automatic should be done at all.
 
 ## Why now
 
