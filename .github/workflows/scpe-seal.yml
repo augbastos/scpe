@@ -1,0 +1,65 @@
+name: scpe-seal
+
+# The TRUSTED half of the fork-safe split — companion to scpe.yml. It runs in the BASE
+# repository with a write-scoped token, AFTER the untrusted job finished, and its only
+# job is to post what that job decided.
+#
+# It never checks out the contributor's code, never runs it, and installs nothing. The
+# only binaries it touches are the runner's own pre-installed `python3` and `gh`.
+#
+# Why a separate file: a workflow cannot name itself in `workflow_run.workflows`. GitHub
+# fails to register such a file — it shows the file path where the workflow name should
+# be, and every run fails at the workflow level with zero jobs. Measured on a live
+# repository (docs/workflows/scpe.yml records the experiment).
+#
+# `workflow_run` only fires for a workflow file present on the DEFAULT branch. Both files
+# have to reach `main` before any pull request gets a seal — including the PR that adds
+# them. That is expected, not a misconfiguration.
+on:
+  workflow_run:
+    workflows: ["scpe"]
+    types: [completed]
+
+permissions:
+  contents: read
+
+jobs:
+  seal:                         # TRUSTED — write token; never runs untrusted code
+    if: ${{ github.event.workflow_run.conclusion == 'success' }}
+    runs-on: ubuntu-latest
+    permissions:
+      pull-requests: write
+      # A job-level permissions block REPLACES the workflow default (it does not merge),
+      # so every unlisted scope is set to none. download-artifact with run-id needs
+      # actions:read to reach a sibling run's artifact — without it the download fails
+      # and the gate never runs.
+      actions: read
+    steps:
+      - name: Download the verify job's results
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093  # v4
+        with:
+          name: scpe-results
+          run-id: ${{ github.event.workflow_run.id }}
+          github-token: ${{ github.token }}
+
+      - name: Post the seal comment (or the gate failure)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          pr="$(cat pr-number.txt)"
+          # The require DECISION was computed upstream, in the untrusted "verify" job
+          # (results.json's gate_pass) — this step only ever READS it, never recomputes
+          # it from raw contributor input. Missing key defaults to "pass".
+          gate_pass="$(python3 -c "import json; print(str(json.load(open('results.json')).get('gate_pass', True)).lower())")"
+          if [ "$gate_pass" = "false" ]; then
+            msg="$(python3 -c "import json; d = json.load(open('results.json')); print(d.get('fail_message') or '❌ Not verifiable — this repository requires an AI-use disclosure (SCPE level 1).')")"
+            gh pr comment "$pr" --repo "${{ github.repository }}" --body "$msg"
+            exit 1
+          fi
+          # The comment is rendered upstream, in the same untrusted job, and posted here
+          # byte-for-byte. That does not weaken the split: every field in the seal already
+          # comes from the contributor's PR. What it changes is that neutralizing that
+          # content (fence escaping, length caps) sits in one tested renderer instead of
+          # in this YAML.
+          msg="$(python3 -c "import json; print(json.load(open('results.json')).get('comment') or '')")"
+          [ -n "$msg" ] && gh pr comment "$pr" --repo "${{ github.repository }}" --body "$msg"

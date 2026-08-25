@@ -1,0 +1,69 @@
+name: scpe
+
+# SCPE, applied to SCPE. This repository specifies how a project can tell who signed a
+# contribution and what they declared about AI use — so it has to answer those questions
+# about its own pull requests first. Until 2026-08-25 it did not: PRs opened by agents
+# (Jules, and reviews by CodeRabbit and Strix) landed with the provenance question
+# unanswered, which is the exact gap the spec describes.
+#
+# Measured before writing this file: reference/disclosure.py returned
+# {'present': False, 'form': 'none'} for PR #2, an agent-authored PR whose body says
+# "PR created automatically by Jules" in free text. Free text is not a disclosure the
+# protocol can see. That is a bug in this project, not a reason to keep agents out.
+#
+# TWO FILES, NOT ONE — load-bearing, not style. See docs/workflows/scpe.yml for the full
+# reasoning: this untrusted half runs on `pull_request` with a read-only token and may
+# execute a stranger's code; the trusted half (scpe-seal.yml) runs on `workflow_run` in
+# the base repo and only posts what this job decided.
+#
+# WHY LEVEL 1 AND NOT LEVEL 2 — this is the honest trade-off, stated where it applies.
+# Level 2 requires a signed envelope: an SSHSIG over the manifest, anchored to a key the
+# forge publishes for that account. No coding agent available today can produce one —
+# they have no key of their own on a forge. Gating at level 2 right now would not raise
+# the bar, it would simply ban agent contributions and make this repository quieter and
+# less honest. Level 1 asks the one thing an agent CAN do and a human can do in five
+# seconds: say, in a form a parser can find, whether AI was used. It is enforced
+# (`require: "true"`), so it is a gate and not a decoration.
+#
+# The path to level 2 is written down in AGENTS.md and docs/LEVELS.md, and the switch is
+# a single line below. It moves the day an agent can sign.
+on:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  verify:                       # UNTRUSTED — no secrets; safe to run contributor code
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4
+        with:
+          persist-credentials: false   # never write the token into .git/config
+          # fetch-depth: 0 is required at level 2, where the seal rebuilds
+          # `git diff BASE...HEAD` to check it against the signed digest. Level 1 reads
+          # only the PR body and commit messages, so the full history is not needed —
+          # but it stays here because it costs little on a repo this size and it is what
+          # the level-2 switch below needs the day it flips. Removing it would make that
+          # switch silently report every PR as `tampered`.
+          fetch-depth: 0
+
+      - id: seal
+        # Pinned to the published tag, not `./`, on purpose: the bytes that decide the
+        # verdict must not come from the pull request being judged. A contributor who
+        # could edit the action in their PR could edit the gate that judges it.
+        uses: augbastos/scpe@v0.2.3
+        with:
+          level: "1"                   # AI-disclosure lint. See the note at the top.
+          require: "true"              # a gate, not a report: no disclosure = failing check
+          run-tests: "false"           # this repo's own CI already runs the suite (ci.yml)
+
+      # Hand the verdict + PR number to the trusted job. The number MUST travel in the
+      # artifact: github.event.workflow_run.pull_requests is empty for fork PRs.
+      - run: echo "${{ github.event.pull_request.number }}" > pr-number.txt
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02  # v4
+        with:
+          name: scpe-results
+          path: |
+            results.json
+            pr-number.txt
