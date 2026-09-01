@@ -253,7 +253,7 @@ Stated without hedging, because the project's only real asset is that this list 
 
 ## 5. Residual risk for the current deployment
 
-One maintainer, no CA, no transparency log, no adopters, offline by default, public repo.
+One maintainer, no CA, no transparency log, offline by default, public repo.
 
 - **The reachable facet vector is a floor:** `anchor: policy|flag|bundled`,
   `attribution: self-asserted`, `time: unanchored`, `lineage: none|declared`. Every rung above
@@ -261,11 +261,8 @@ One maintainer, no CA, no transparency log, no adopters, offline by default, pub
   provider that does not currently sign text output.
 - **The blast radius is reputational, not operational.** No user data, no money, no
   production system depends on this. The realistic cost of a mistake is publishing a claim a
-  hostile reader can falsify — and this project's own README already records that its
-  previous premise did not survive contact with the maintainers it was built for. Publishing
-  a second argument that can be falsified by reading the specification against itself is the
-  most likely real loss here, which is why §13.1's table now states the **scope** of every
-  defence rather than asserting completeness.
+  hostile reader can falsify by reading the specification against itself, which is why
+  §13.1's table states the **scope** of every defence rather than asserting completeness.
 - **This document is expected to be wrong somewhere.** Findings are welcome per
   [../SECURITY.md](../SECURITY.md). Two of the sharpest entries above — ADV-4 and the
   `ssh-keygen` exit-code limit in TB-6 — came from adversarial review of an earlier draft,

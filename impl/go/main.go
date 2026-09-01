@@ -35,6 +35,12 @@ import (
 
 const (
 	specVersion   = "1"
+
+	// SPEC 2.1. This port implements the Core profile: it does not resolve chains,
+	// validate observer statements, or support anchors beyond `policy`. It therefore
+	// reports `lineage: declared`, `time: unanchored` and `attribution: self-asserted`
+	// and refuses what it does not implement rather than skipping it.
+	profile = "core"
 	statementType = "https://in-toto.io/Statement/v1"
 	payloadType   = "application/vnd.in-toto+json"
 )
@@ -1125,6 +1131,7 @@ func main() {
 	policy := flag.String("policy", "", "an OpenSSH allowed_signers file (anchor: policy)")
 	sidecar := flag.String("sidecar", "", "explicit path to the .scpe.jsonl record")
 	asJSON := flag.Bool("json", false, "emit the machine-readable result shape")
+	showProfile := flag.Bool("profile", false, "print the conformance profile and exit")
 
 	// Go's flag package stops parsing at the first non-flag argument, so
 	// `scpe-verify FILE --policy P` would silently ignore --policy and every vector would
@@ -1144,6 +1151,10 @@ func main() {
 	}
 	if err := flag.CommandLine.Parse(rest); err != nil {
 		os.Exit(64)
+	}
+	if *showProfile {
+		fmt.Println(profile)
+		os.Exit(0)
 	}
 	if artifact == "" && flag.NArg() > 0 {
 		artifact = flag.Arg(0)

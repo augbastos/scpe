@@ -91,9 +91,58 @@ glosses of §10.5 alongside the `attribution` value. Renderer conformance matter
 anti-laundering property of §11.3 is defeated by presentation alone: a model name shown next
 to a green tick reads as verified no matter which array it came from.
 
+### 2.1 Two profiles: Core and Full
+
+A verifier declares one of two profiles. **Core is a complete, safe verifier that a
+competent engineer reaches in a working day.** Full adds the parts that make results richer,
+not the parts that make them safe.
+
+| | **Core** | **Full** |
+|---|---|---|
+| DSSE envelope, PAE over exact bytes (§4.2) | REQUIRED | REQUIRED |
+| Duplicate-key refusal at any depth (§4.7) | **REQUIRED** | REQUIRED |
+| `assurance` recomputation (§5.6, §10.1) | **REQUIRED** | REQUIRED |
+| Statement + REQUIRED predicate fields (§5.2) | REQUIRED | REQUIRED |
+| Digest AND-matching, `sha256` (§4.5) | REQUIRED | REQUIRED |
+| Suite `sshsig-ssh-ed25519` (§8.1) | REQUIRED | REQUIRED |
+| Anchor `policy` (§10.4) | REQUIRED | REQUIRED |
+| Facets `binding`, `signature`, `anchor` | REQUIRED | REQUIRED |
+| Observer statements (§8.4) | refuse, see below | REQUIRED |
+| Chain resolution (§6.4) → `verified-depth-N` | not required | REQUIRED |
+| Time anchors (§10.6) → `externally-anchored` | not required | REQUIRED |
+| Anchors `flag`, `forge`, `bundled` | not required | REQUIRED |
+| Additional suites and digest algorithms | not required | OPTIONAL |
+
+**The rule that makes Core safe, and it is the whole point:**
+
+> **A Core verifier MUST refuse what it does not implement. It MUST NOT ignore it.**
+
+Concretely, a Core verifier:
+
+- **MUST** return `unsupported-role` when a bundle contains a statement whose signature
+  verifies under a namespace it does not implement. Silently skipping such a line would let
+  an unimplemented role sit in a record that still reports `ok`.
+- **MUST** report `lineage: declared` — never `verified-depth-N` — when `derivedFrom` is
+  present, because it resolved nothing.
+- **MUST** report `time: unanchored`, because it validated no anchor.
+- **MUST** report `attribution: self-asserted`, because every route above it requires
+  evidence Core does not process.
+- **MUST** name each of these in `not_checked[]`, so the ceiling is visible in the result
+  rather than only in a profile badge.
+
+Three rows are marked REQUIRED in Core in bold because skipping them is not a smaller
+verifier, it is a wrong one. Duplicate-key refusal and `assurance` recomputation are the two
+places where an unimplemented rule produces a **passing** result on a record that should
+fail; everything else in the Full column degrades to a weaker, honest answer on its own.
+
+A Core verifier is conforming, and says so. `scpe-verify --profile` **MUST** print which
+profile the implementation implements.
+
 Conformance is testable. The vector corpus in **`spec/test-vectors-v1/`** is normative: a
 conforming verifier MUST produce the recorded status and, where `expected.json` names them,
-the recorded facets for every vector.
+the recorded facets for every vector. Each vector's `expected.json` carries a `profile` key
+of `core` or `full`; a Core verifier is measured against the `core` subset and MUST refuse,
+not misread, the rest.
 
 `spec/test-vectors/` holds the retired `scpe/0.1` corpus. It is **not** normative for this
 version, and its recorded statuses (`verified`, `tampered`, `unsupported-provider`,

@@ -1,5 +1,6 @@
 {
   "status": "unsupported-suite",
   "exit": 32,
+  "profile": "core",
   "note": "Post-quantum suite registered in SPEC 8.1 and not implemented. Today this must fail closed; tomorrow it must pass with no format change."
 }

@@ -1,5 +1,6 @@
 {
   "status": "unsupported-predicate",
   "exit": 30,
+  "profile": "core",
   "note": "A signed statement of some other kind. Refused, not best-effort read."
 }

@@ -56,6 +56,54 @@ def run_go(vector: Path) -> dict:
     return result
 
 
+def declared_profile(cmd: list[str]) -> str:
+    return subprocess.run(cmd + ["--profile"], capture_output=True, text=True,
+                          timeout=60).stdout.strip()
+
+
+def vectors_for(profile: str) -> list[Path]:
+    """A Core verifier is measured against the Core subset; Full against everything."""
+    if profile == "full":
+        return VECTOR_DIRS
+    return [v for v in VECTOR_DIRS
+            if json.loads((v / "expected.json").read_text()).get("profile") == "core"]
+
+
+def test_every_vector_declares_a_profile():
+    """SPEC §2.1. A vector with no profile cannot be scoped to an implementation."""
+    for vector in VECTOR_DIRS:
+        expected = json.loads((vector / "expected.json").read_text())
+        assert expected.get("profile") in ("core", "full"), f"{vector.name} has no profile"
+
+
+def test_the_python_reference_declares_full_and_earns_it():
+    profile = declared_profile([sys.executable, str(PY_VERIFIER)])
+    assert profile == "full"
+    for vector in vectors_for(profile):
+        expected = json.loads((vector / "expected.json").read_text())
+        assert run_python(vector)["status"] == expected["status"], vector.name
+
+
+@needs_go
+def test_a_declared_profile_is_earned_not_claimed():
+    """The profile is only worth stating if it is measured.
+
+    A Core verifier must pass every Core vector. It is not held to the Full ones — but it
+    must reach a *safe* answer on them rather than a wrong one, which §2.1 guarantees by
+    requiring refusal over silence.
+    """
+    profile = declared_profile([str(GO_VERIFIER)])
+    assert profile in ("core", "full"), f"undeclared profile: {profile!r}"
+    scope = vectors_for(profile)
+    assert scope, "profile scoped to no vectors"
+    for vector in scope:
+        expected = json.loads((vector / "expected.json").read_text())
+        got = run_go(vector)
+        assert got["status"] == expected["status"], (
+            f"{vector.name}: a verifier declaring {profile!r} must handle it")
+        assert got["exit"] == expected["exit"]
+
+
 @needs_go
 @pytest.mark.parametrize("vector", VECTOR_DIRS, ids=lambda p: p.name)
 def test_go_matches_the_recorded_expectation(vector):

@@ -1,5 +1,6 @@
 {
   "status": "signature-invalid",
   "exit": 20,
+  "profile": "core",
   "note": "The declared model was edited without re-signing."
 }

@@ -1,5 +1,6 @@
 {
   "status": "digest-mismatch",
   "exit": 21,
+  "profile": "core",
   "note": "A genuine, correctly signed record moved onto another file. The subject digest lives inside the signed payload, so it cannot follow."
 }

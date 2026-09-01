@@ -47,6 +47,11 @@ from pathlib import Path
 # ------------------------------------------------------------------ constants
 
 SPEC_VERSION = "1"
+
+#: SPEC §2.1. This implementation resolves chains, validates observer statements and
+#: supports every registered anchor, so it declares `full`. A Core verifier is equally
+#: conforming; it must refuse what it does not implement rather than ignore it.
+PROFILE = "full"
 STATEMENT_TYPE = "https://in-toto.io/Statement/v1"
 PAYLOAD_TYPE = "application/vnd.in-toto+json"
 
@@ -1277,8 +1282,14 @@ def main(argv: list[str] | None = None) -> int:
                              "the double opt-in required before any network access")
     parser.add_argument("--chain", action="store_true",
                         help="resolve derivation parents already present on disk")
+    parser.add_argument("--profile", action="store_true",
+                        help="print the conformance profile this build implements and exit")
     parser.add_argument("--json", action="store_true")
     args = parser.parse_args(argv)
+
+    if args.profile:
+        print(PROFILE)
+        return 0
 
     if args.artifact is None and args.sidecar is None:
         parser.error("give an artifact, a --sidecar, or both")

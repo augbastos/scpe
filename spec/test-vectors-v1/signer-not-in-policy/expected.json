@@ -1,5 +1,6 @@
 {
   "status": "signature-invalid",
   "exit": 20,
+  "profile": "core",
   "note": "The signature is cryptographically sound but no trusted principal holds the key."
 }

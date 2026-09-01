@@ -9,5 +9,6 @@
     "time": "unanchored",
     "lineage": "none"
   },
+  "profile": "core",
   "note": "A well-formed generation record. Note that the strongest available attribution is still self-asserted."
 }

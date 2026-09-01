@@ -1,5 +1,6 @@
 {
   "status": "malformed-predicate",
   "exit": 35,
+  "profile": "full",
   "note": "An observer claiming a model identity it cannot have witnessed. Refused by schema, so the wider claim is unrepresentable rather than merely discouraged."
 }

@@ -1,5 +1,6 @@
 {
   "status": "signature-invalid",
   "exit": 20,
+  "profile": "core",
   "note": "A repeated key at any depth is refused rather than resolved to first- or last-wins. Here the signature also fails, which is the belt to the parser's braces."
 }

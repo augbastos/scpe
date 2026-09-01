@@ -9,5 +9,6 @@
     "time": "unanchored",
     "lineage": "none"
   },
+  "profile": "core",
   "note": "A well-formed record whose payload contains multi-byte UTF-8 in both a declared field and the subject name. Verifies only if PAE length-prefixes the payload in BYTES and the payload is never decoded to a text type before signing or verifying."
 }
