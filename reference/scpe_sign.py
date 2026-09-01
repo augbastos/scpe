@@ -118,6 +118,17 @@ def build_envelope(statement: dict, private_key: Path, namespace: str) -> dict:
     would produce an envelope whose signature does not cover its own payload. Serializing
     once is the producer-side half of the exact-bytes rule (SPEC §4.2).
     """
+    # `ensure_ascii` is left at its default ON purpose: this producer escapes non-ASCII to
+    # \uXXXX, so every record it emits is pure ASCII and survives any pipeline that mangles
+    # encodings. That is a PRODUCER choice, not a format requirement. PAE signs whatever
+    # bytes it is handed, so a producer emitting raw UTF-8 is equally conforming and a
+    # verifier MUST handle both.
+    #
+    # Worth knowing because it hides a test case: this function can never emit a payload
+    # whose byte count differs from its character count, so the corpus vector that catches
+    # an implementation measuring characters instead of bytes (`non-ascii-payload`) had to
+    # be built by hand. A reference implementation cannot test the cases its own choices
+    # make unreachable.
     body = json.dumps(statement, separators=(",", ":"), sort_keys=True).encode("utf-8")
     signature = sshsig_sign(pae(PAYLOAD_TYPE, body), private_key, namespace)
     return {

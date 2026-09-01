@@ -276,6 +276,20 @@ A verifier **MUST**:
 
 - check any declared size against its cap **before** allocating, and additionally bound the
   read at `cap + 1` bytes so a lying length header cannot exceed the cap;
+
+> **On the next clause: no standard library does this for you, and assuming otherwise is the
+> documented failure mode.** Measured: Go's `encoding/json`, Rust's `serde_json`,
+> JavaScript's `JSON.parse` and Python's default `json.loads` **all** accept a duplicate key
+> silently and keep the last value. Satisfying it costs real code in every one of them — a
+> token-stream walk, a custom deserializer, or equivalent.
+>
+> An implementation that skips it accepts vector `signed-duplicate-key`, where a single
+> **valid** signature covers a payload declaring both `digitalCapture` and
+> `trainedAlgorithmicData`; the signer then picks which origin a reader sees by ordering the
+> keys. An independent implementer working from this document read the clause, judged it
+> cheap to defer, and shipped a verifier that accepted exactly that vector. This note exists
+> because of that.
+
 - **reject** a JSON object containing a duplicate key at **any** nesting depth, rather than
   resolving to first-wins or last-wins. Identical bytes must yield an identical verdict
   everywhere, and RFC 8259 leaves duplicate names implementation-defined;
@@ -710,6 +724,26 @@ step's status.
      using only keys resolved from the anchor (§10.4). Any **declared** signature failing →
      `signature-invalid` (§8.4).
 
+   **For the SSHSIG suites this is two invocations, not one, and the order matters.**
+   `ssh-keygen -Y verify` requires a principal (`-I`) and fails without one; the principal
+   is not in the record and **MUST NOT** be taken from it. Resolve it from the operator's
+   own policy first:
+
+   ```
+   ssh-keygen -Y find-principals -s <sig> -f <allowed_signers>   # who holds this key
+   ssh-keygen -Y verify -s <sig> -f <allowed_signers> -I <principal> -n <namespace>
+   ```
+
+   `find-principals` answers only "which principals in this policy hold the key that made
+   this signature". It does **not** enforce the namespace — and it rejects `-O namespace=…`
+   as an invalid option, so an implementation that tries to filter there finds nothing.
+   `verify` enforces both the signature and the namespace. Where several principals hold the
+   key, each is tried and the first that verifies is the answer.
+
+   Stated here because an independent implementer reached this by trial and error after
+   `verify` failed with "missing principal identity", which is a defect in this document
+   rather than in their reading of it.
+
    **If the signing backend is unavailable or errors, the status is `tooling-error` — never
    `signature-invalid`.** The two are not interchangeable: one says a check ran and the
    signature was rejected, the other says no check ran at all.
@@ -722,6 +756,15 @@ step's status.
 8. **Validate the predicate** against §5. Missing a REQUIRED field → `malformed-predicate`.
    Unrecognised **optional** fields are ignored, not errors — **except `assurance` (§5.6),
    which is reserved and MUST be carried forward to step 13.**
+
+   **There are two predicate shapes, not one, and the check branches here.** If every
+   verified signature on this envelope has role `observer`, validate it as an **observer
+   statement** per §8.4: `observed.statementDigest.sha256` is REQUIRED, and the presence of
+   `generation.provider`, `generation.model`, `generation.humanOversight`,
+   `generation.producedAt`, `derivedFrom`, `commitments` or `run` is `malformed-predicate`.
+   Otherwise validate it as a producer statement. An implementer reading straight through
+   will meet the roles in §5.4 and the two shapes only in §8.4, sixty lines later, and can
+   reasonably assume a single shape until then.
 9. **Bind the subject.** If artifact bytes were supplied, hash them and compare under §4.5's
    AND rule. Mismatch → `digest-mismatch`. Empty algorithm intersection →
    `unsupported-digest`. **No bytes supplied → the run continues, and `binding` is

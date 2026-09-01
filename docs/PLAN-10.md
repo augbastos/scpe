@@ -35,7 +35,7 @@ what they claimed.
 | 6 | **Honest ladder.** Every facet value reachable with a real file, **and every value whose reachability is structurally rare documented as such.** | ✗ | Rewritten |
 | 7 | **Two-way interop** with drift caught by tests. | ✗ | |
 | 8 | **No unaddressed threat solvable within the offline-first scope.** Threats solvable only with external infrastructure are acceptable **iff** normatively declared as such, and no weaker than contemporaneous standards. | ✗ | Rewritten twice |
-| 9 | **Cheap to implement:** a minimal conforming verifier (REQUIRED fields, one suite, SHA-256) in ≤8 hours by a competent engineer with no prior SCPE knowledge. | ✗ | Rewritten with a threshold |
+| 9 | **Cheap to implement:** a minimal conforming verifier (REQUIRED fields, one suite, SHA-256) in ≤8 hours by a competent engineer with no prior SCPE knowledge. | **✗ MEASURED AND FAILED** | See below |
 | 10 | **Graceful degradation.** Everything unknown fails closed and legible. | **✓** | |
 | 11 | **Sidecar arrival strategies specified normatively**, following SLSA. Adoption is ecosystem-level and **the format carries no responsibility for it**, stated plainly. | ✗ | **New** |
 | 12 | **Renderer conformance is testable**, and dishonest rendering is detectable. | ✗ | **New** |
@@ -69,6 +69,32 @@ by ordering the keys. One signed artifact, two truths, selected per reader.
 "Two implementations agree" would not catch this if both authors reached for the default
 parser. The criterion now requires the hostile case tested **per language**, and the corpus
 carries the vector that does it.
+
+### Criterion 9 was measured, and the specification failed it
+
+An independent implementer wrote a Rust verifier from this document with no access to the
+Python reference. Result: **~3 hours to 11 of 15 vectors**, and their own estimate of
+**9-10 hours to full conformance** - over the 8-hour threshold this criterion sets.
+
+Their breakdown of what remained: assurance facets (~1h), observer validation (~30m),
+duplicate-key detection (~1h), chain traversal (~2h), evidence and `proved[]`/`declared[]`
+(~1.5h). They also spent a debugging detour on PAE bytes-versus-string that the document
+should have prevented.
+
+Two honest readings of that number:
+
+- The threshold is wrong and should be raised. Defensible, and the easy way out.
+- **The specification is too large for what it claims.** The four vectors that failed were
+  not exotic; they were `duplicate-json-key`, `signed-duplicate-key`, `assurance-overclaimed`
+  and `observer-overreach` - one mandatory parser rule and two whole subsystems. An
+  implementer who stops at 8 hours ships something that says `ok` to a record carrying two
+  contradictory origins under one valid signature.
+
+The second reading is the correct one, and the fix is not to move the number. It is to
+define a **conformance floor** smaller than the whole document - a profile an implementer
+can reach in 8 hours that is genuinely safe, with facets, chains and evidence layered above
+it - so that a partial implementation fails closed instead of passing loudly. Until that
+profile exists, criterion 9 stays failed.
 
 ---
 
