@@ -1,0 +1,5 @@
+{
+  "status": "digest-mismatch",
+  "exit": 21,
+  "note": "Bytes edited after signing; the subject digest no longer matches."
+}

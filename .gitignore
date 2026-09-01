@@ -27,3 +27,7 @@ impl/rust/target/
 target/
 # hostile-review Q&A — internal prep, not published
 docs/review-simulation.md
+
+# SCPE prompt disclosures: these contain the PLAINTEXT committed value.
+# Never commit one - the whole point of a commitment is that the value stays private.
+*.scpe.disclosures.jsonl

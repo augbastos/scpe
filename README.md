@@ -1,384 +1,313 @@
-<p align="center">
-  <img src="docs/assets/scpe-logo.svg" alt="SCPE" width="104" height="104">
-</p>
+<p align="center"><img src="docs/assets/scpe-logo.svg" width="140" alt="SCPE"></p>
 
-<h1 align="center">SCPE</h1>
+# SCPE — Signed Content Provenance Evidence
 
-<p align="center">
-  <b>Know who signed a contribution — and which AI they said they used.</b><br>
-  A single envelope. Multiple specifications.<br>
-  <i>Merge code, not claims.</i>
-</p>
+[![CI](https://github.com/augbastos/scpe/actions/workflows/ci.yml/badge.svg)](https://github.com/augbastos/scpe/actions/workflows/ci.yml)
+[![PyPI](https://img.shields.io/pypi/v/scpe-protocol)](https://pypi.org/project/scpe-protocol/)
+[![Python](https://img.shields.io/pypi/pyversions/scpe-protocol)](pyproject.toml)
+[![license: Apache-2.0](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
 
-<p align="center">
-  <a href="https://github.com/augbastos/scpe/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/augbastos/scpe/actions/workflows/ci.yml/badge.svg"></a>
-  <img alt="3 impls" src="https://img.shields.io/badge/verifiers-python%20%2B%20go%20%2B%20rust-41c257?style=flat-square&labelColor=0b0b0c">
-  <img alt="spec" src="https://img.shields.io/badge/spec-scpe%2F0.1-41c257?style=flat-square&labelColor=0b0b0c">
-  <img alt="python" src="https://img.shields.io/badge/python-3.11%2B-41c257?style=flat-square&labelColor=0b0b0c">
-  <img alt="license" src="https://img.shields.io/badge/code-Apache--2.0-41c257?style=flat-square&labelColor=0b0b0c">
-  <img alt="status" src="https://img.shields.io/badge/v0.2.3-early-d29922?style=flat-square&labelColor=0b0b0c">
-</p>
+**A signed, checkable claim about what produced a file — and a verifier that tells you
+exactly what it checked and what it did not.**
 
-<p align="center">
-  <a href="https://augbastos.github.io/scpe/"><b>augbastos.github.io/scpe</b></a> — what it is, in one page
-</p>
+```console
+$ python reference/scpe_verify.py report.pdf --policy ~/.ssh/allowed_signers
+[OK] ok
 
-An open protocol for two questions a pull request cannot answer today: **who signed this
-change**, and **what did they declare about AI use** — with proof that the diff is
-byte-for-byte what they signed. No SCPE server, no new accounts, no new keys: the contributor
-signs with the SSH key already on their git host, and the owner re-derives everything with
-`ssh-keygen` and `git`.
+  What this result is:
+    binding      bound
+    signature    valid
+    anchor       policy
+    attribution  self-asserted  - the producer signed a claim about itself; nothing independent corroborates it
+    time         unanchored
+    lineage      declared
 
-The AI-use disclosure is **signed**, not typed into a form. That is the whole difference. A
-signature does not make a claim true — it makes it *attributable* and *tamper-evident*: bound
-to one identity and to this exact diff, so it cannot be edited afterwards or quietly attached
-to different code. Whether someone told the truth about their tools stays a human judgement;
-SCPE makes sure the claim, the author, and the change cannot be separated.
+  Proved (checks this verifier performed):
+    + subject digest matches the supplied bytes (sha256)
+    + signature over the predicate by SHA256:Y6GIsYhCeRNdFc9wzAD/K4mv8FvFoQiG/ZvV3WOiGKc (principal alice, role-scoped namespace)
+    + the signing key is listed in the operator's allowed_signers file
 
-When a PR arrives from someone you don't know — a person, or increasingly an AI agent — trust
-today rests on a username, the platform, and reading the diff by eye. SCPE replaces the first
-two with something the owner can check locally, and leaves the third where it belongs. There
-is no SCPE server, so there is nothing to trust and nothing to shut down.
+  Declared by the signer (NOT verified):
+    ~ generation.digitalSourceType = http://c2pa.org/digitalsourcetype/trainedAlgorithmicData
+    ~ generation.provider = anthropic
+    ~ generation.model = claude-opus-4-5-20251101
+    ~ generation.humanOversight = prompt_guided
+    ~ subject[0].name = report.pdf
+    ~ subject[0].mediaType = application/pdf
+    ~ derivedFrom: inputTo quarterly.csv
 
----
+  Not checked:
+    ? that claude-opus-4-5-20251101 produced these bytes - the claim is signed by the producer about itself, and no provider or TEE attestation is present
+    ? when this was signed - no verified time anchor is present
+    ? that any derivation edge occurred - no parent statement was resolved
+    ? that no other transformation occurred - SCPE cannot express that claim
+```
 
-## Read this before the rest: what happened when I asked
+*(Real output, pasted unedited. There is no `scpe verify` console script for this format —
+the published `scpe` entry point still belongs to the retired `scpe/0.1` CLI.)*
 
-**This project is frozen, has zero adopters, and the argument it was built on did not survive
-contact with the maintainers it was built for.** That is the finding, and it is more useful
-than the protocol, so it goes above the protocol.
-
-On 2026-07-28 I asked two of the projects whose AI policies this repository cites how their
-own policy is actually checked. I expected "nobody checks." Three answers came back in hours.
-
-**OpenSSL already automates it.** A project member described their CLA service: it reads every
-non-trivial commit for the `Assisted-by:` trailer, with `Co-authored-by:` naming a known AI
-tool as a backstop, and posts a `cla-check` status. An AI-assisted commit from a contributor
-still on CLA 1.0 fails and is held until they re-sign 1.1. Asked whether *presence* of the
-trailer is checked for someone already on 1.1:
-
-> Obviously not and we don't enforce it.
-
-They built automation the moment the disclosure carried a **legal consequence**, and
-deliberately built none for transparency. That is not a project failing to enforce its policy.
-It is a project enforcing the branch that routes somewhere.
-
-**MicroPython checks by eye and reports it works.** A collaborator there:
-
-> I look at more than the checkbox and canned text phrases as some authors add more context.
->
-> I seldom find it is omitted, and I can only recall a few cases, most of them when the
-> template was circumvented.
->
-> Most authors quickly correct when reminded by a human, less so when CI is showing ❌
-
-Three things in that. Omission is rare. The real failure is people going around the template,
-which a lint on the checkbox would not catch. And the last line inverts an assumption built
-into this design: an automated red check may buy **less** compliance than a person asking.
-
-**A third contributor said the question read as an advert.** Fair — the post carried a link.
-
-### What that killed
-
-- The premise. "Policies exist and nothing enforces them" is false where it mattered most.
-- The framing. Level 1 was described as *enforcement* and a *gate*. If a red check produces
-  less compliance than a human reminder, "gate" is not merely unnecessary, it is wrong. It is
-  a reviewer aid, `require: "false"` is the default, and that is now what the docs say.
-- The direction. Maintainers who *are* drowning chose to **reduce input**, not to verify it
-  better: the Jazzband collective shut down over AI PR volume, tldraw auto-closes all external
-  pull requests, GitHub shipped a switch to disable PRs outright. And curl — the loudest
-  AI-slop casualty of the year — had a problem this protocol does not touch. They did not need
-  to know AI was used. They needed the reports to be good.
-
-### What survived
-
-The half nobody attacked: **you can check it yourself, offline, in one file.** Recompute the
-diff, compare the hash, resolve the key. That is a property you can verify in an afternoon, not
-a promise. Whether anyone needs it is exactly what has not been demonstrated.
-
-### What I am not doing
-
-Not building Level 3. Not sending more cold outreach — the channel visibly burns. Not
-presenting this as a solution looking for its first user. It is a finished, frozen artifact at
-`v0.2.3` with a written spec, a threat model, three independent verifiers held to identical
-verdicts, and an honest record of being wrong in public.
-
-If you maintain something and you think the premise is wrong in the *other* direction — that
-you do have this problem — that is the one thing worth telling me.
+**That last block is the product.** Most tools in this space answer with a verdict. This one
+answers with the scope of the verdict.
 
 ---
-
-**SCPE standardizes evidence, not content.** It never says an artifact is good, true, or safe —
-it standardizes how verifiable evidence (who produced it, that it's untampered, and any signed
-attestations) travels with a hashed artifact and is checked offline.
-
-**One core, many specifications.** *SCPE Core* — the envelope, identity, and verification — is
-shared by every domain. Each *SCPE Specification* adds only its domain's conventions on top; the
-`profile` label is surfaced but never changes the verify decision.
-
-| Specification | For | Seals | Example |
-|---|---|---|---|
-| **SCPE-C** | Code | a diff (`code-change`) | a pull request |
-| **SCPE-I** | Images | the file's bytes (`artifact`) | `.png`, `.jpg` |
-| **SCPE-V** | Video | the file's bytes | `.mp4`, `.mov` |
-| **SCPE-A** | Audio | the file's bytes | `.wav`, `.mp3` |
-| **SCPE-M** | Models | the file's bytes | `.safetensors`, `.gguf` |
-| **SCPE-DATA** | Datasets | the file's bytes | `.csv`, `.parquet` |
-| **SCPE-D** | Documents | the file's bytes | `.pdf` |
-| **SCPE-AR** | Any artifact | the file's bytes | any file |
-
-Identity is a `(provider, subject)` pair checked against keys from a fixed host table (`github`,
-`gitlab`, `codeberg`) or from a keys file — one the verifier's owner supplied, or one bundled
-inside the submission. The manifest never carries a hostname, so a contribution can't steer the
-verifier at an attacker's host; it *can* enclose its own keys, which is why the verifier reports
-the anchor that answered as `key_source`.
-
-**Open, and meant to stay that way.** SCPE is — and will always be — open source: the
-specification and every reference implementation are free to read, implement, and fork. The
-goal is a single, open, *universal* standard for artifact provenance, and a standard only
-becomes universal if anyone can implement it without asking permission. So being open isn't a
-license choice here; it's the whole point.
-
-> **Attribution tells you *what*. Provenance proves *who* — and that nothing was tampered with.**
-
-## What SCPE is — and isn't
-
-| **SCPE is** | **SCPE is not** |
-|---|---|
-| a minimal, transportable, offline-verifiable **evidence format** for a contribution or artifact — *who* produced it, proof it's *untampered*, and any *signed attestations* — with one core and thin per-domain profiles. | a code reviewer, a malware scanner, an artifact registry, a CI/CD security system, a compliance framework, or a hosted service. It doesn't judge whether the artifact is *good* or *safe* — only that the evidence checks out. |
-
-For how SCPE relates to code review, build provenance, and attribution records, see
-[docs/comparison.md](docs/comparison.md).
-
-## What ships in this repo
-
-A protocol, and the smallest set of things needed to prove it is one. Nothing here writes,
-reviews, or generates code — SCPE never looks at what a change *does*, only at who signed it and
-whether it still matches.
-
-| | What it is |
-|---|---|
-| [`spec/`](spec/) | The normative protocol: [SPEC.md](spec/SPEC.md), the threat model, the manifest schema, and 18 test vectors that are the conformance contract. |
-| [`reference/standalone/verify_envelope.py`](reference/standalone/verify_envelope.py) | **The verifier.** One stdlib-only file that imports nothing else in this repo. |
-| [`reference/producer.py`](reference/producer.py) | The producer (`scpe-envelope pack` / `pack-artifact` / `attest` / `verify` / `submit`) — signs an envelope with a key the contributor already owns. |
-| [`impl/go/`](impl/go/), [`impl/rust/`](impl/rust/) | Two independent ports of the verifier, held to the same verdict by a differential test. |
-| [`action.yml`](action.yml) | The maintainer-side GitHub Action. It runs the verifier above, on the same format, out of its own checkout. |
-| [`scpe/`](scpe/) | The `scpe-protocol` package: a stdlib-only CLI over that same verifier, plus the seal the Action renders and the opt-in badge. |
-
-The package is a *distribution* of the protocol, not a second implementation of it: `scpe verify`
-is a passthrough whose JSON and exit code are byte-identical to running the single file directly.
-There is one envelope format, one verification algorithm, and one verdict — everything above is a
-different way of reaching the same one.
-
-## The assurance ladder
-
-Adopt at the level that fits your project, and upgrade later without changing the format.
-
-| Level | What the repo requires | Contributor cost |
-|---|---|---|
-| **L1 — Disclosure** | An AI-use disclosure is present (an `Assisted-by:` trailer or a PR-template checkbox). | Zero — it's the policy you may already have written, now enforced. |
-| **L2 — Signed envelope** | A valid signed SCPE envelope: verifiable identity + an untampered diff. | One command to sign. |
-| **L3 — Countersignature** *(roadmap)* | A third party (a reviewer, or the agent platform) co-signs. | — |
-
-Higher levels include the lower ones. Most projects that already require AI disclosure need
-**L1** today; the signature is the *mechanism*, the policy is the *product* — the same shape
-SLSA uses to sell levels. See [docs/LEVELS.md](docs/LEVELS.md).
 
 ## How it works
 
-1. **Contributor** (human or agent) packs the change into a signed *envelope*: a manifest
-   (target repo, base commit, a SHA-256 of the exact diff, an AI-use disclosure, and an
-   optional attribution record) signed with the SSH key already on their GitHub profile
-   (`ssh-keygen -Y sign -n scpe/0.1`). No new account.
-
-   > **The key has to be published as an authentication key.** `forge` verification reads
-   > `github.com/<login>.keys`, and GitHub serves only authentication keys there — a key added
-   > under *Signing keys* is real, is used by `git`, and **never appears at that URL**, so a
-   > contribution signed with it can only ever reach `key_source: bundled`. Add it with
-   > `gh ssh-key add <key>.pub --title scpe` (no `--type signing`). GitHub does publish signing
-   > keys, at `api.github.com/users/<login>/ssh_signing_keys`, but `<host>/<login>.keys` is the
-   > shape the fixed provider table is built on; reading the signing-key endpoint per provider is
-   > open, not decided. Filing the key in the obviously-correct place and silently losing forge
-   > verification is the first thing that went wrong for the protocol's own author.
-2. It travels inside a **normal pull request** — the diff in the branch, the ~1–2 KB signed
-   attestation embedded in the PR body. Merging leaves the repo history clean.
-3. The **owner's side** re-derives everything itself, with no SCPE server involved: the diff's
-   SHA-256 is recomputed from the PR and compared, and a seal is posted (or, in require mode, an
-   unverifiable PR is rejected). There is **one verifier, not two** — the Action runs the same
-   single-file verifier described below, out of its own checkout at the tag you pinned, so there
-   is no second implementation to drift. What can differ between runs is only which key anchor
-   answers, and the result always names it:
-   - **Through the Action**, a contribution cannot substitute the keys that judge it. The
-     transport carries `manifest.json` and `manifest.sig` and nothing else (SPEC §9), so there is
-     no enclosed key set to find and the keys come from `github.com/<login>.keys`, live, at
-     `key_source: forge`. A maintainer running air-gapped can hand it a keys file of their own
-     instead — that reports `flag`, and the seal says so, because "the keys this repo supplied"
-     is a different claim from "the keys GitHub serves for that account".
-   - **Run directly**, the same file is the general tool, auditable in ten minutes: it resolves a
-     keys file you pass it first, then any `keys` file bundled in the input, and only if neither
-     answers, one HTTPS GET to the contributor's host. It reports which one answered as
-     `key_source`, so an offline conformance run is never mistaken for a forge check.
-
-## What `verified` proves — and what it doesn't
-
-**What a `verified` result means depends on where the verifier got the keys** — which it reports
-as `key_source`. At `forge` it means exactly: *a key the contributor's git host publishes for
-this account signed exactly this change and this disclosure, and the diff you're looking at
-matches, byte-for-byte after normalizing line endings, what they signed.* At `flag` it means the
-same, with the verifier owner's own key set standing in for the host. At `bundled` — keys
-carried inside the submission, chosen by whoever sent it — it means only that these exact bytes
-were signed by a key that arrived with them, and nothing about the named account. **A consumer
-that needs forge-backed identity MUST require `key_source == "forge"`**, or supply the key set
-itself and require `"flag"`.
-
-Under every anchor it does **not** prove the code is safe or good (SCPE is not review), that the
-disclosure is honest (a signature proves *who claimed*, not that the claim is true), or anything
-if the key set that answered is compromised or attacker-chosen — that key set is the trust root.
-Read [spec/THREAT_MODEL.md](spec/THREAT_MODEL.md) before relying on it: §2.1 lays out the three
-anchors and what a verdict is worth under each.
-
-## For maintainers — turn it on
-
-Add a workflow that verifies every PR and posts a seal. Set `require` to gate merges.
-
-```yaml
-# .github/workflows/scpe.yml — the step. Copy BOTH files from docs/workflows/ for the
-# fork-safe version: scpe.yml (verify) and its companion scpe-seal.yml (post the seal).
-- uses: augbastos/scpe@v0.2.3
-  with:
-    level: "1"        # 1 = disclosure lint · 2 = signed envelope required
-    require: "true"   # fail the check on anything not verifiable
+```mermaid
+flowchart LR
+    A[File / artifact] -->|producer asserts a generation claim| B["Sign the predicate<br/>ssh-keygen -Y sign"]
+    B --> C["DSSE envelope<br/>file.scpe.jsonl sidecar"]
+    C --> D{"Verifier<br/>scpe_verify.py"}
+    P["Operator's own trust policy<br/>allowed_signers, namespace-scoped"] -. "human gate: only a listed signer verifies" .-> D
+    D --> E["Assurance-scoped verdict<br/>binding · signature · anchor · attribution · time · lineage"]
+    E --> F["Proved<br/>checks the verifier itself performed"]
+    E --> G["Declared, not verified<br/>the signer's own claim about itself<br/>(attribution: self-asserted today —<br/>provider-attested / tee-attested are<br/>specified, not built)"]
+    E --> H["Not checked<br/>named as a gap, never silently skipped"]
 ```
 
-### Version policy
+The signature is what binds the predicate to a signer (**B → C**). The human gate is the
+**operator's own trust policy** — the `allowed_signers` file (format shown under
+[Install and use](#install-and-use)), held offline, with no infrastructure: nothing
+verifies for a key that isn't listed in it (**P → D**). There is no
+GitHub identity binding and no repo-owner merge gate in this flow — that was `scpe/0.1`'s
+pull-request model, retired; see [What came before](#what-came-before). What comes out
+(**E**) is never collapsed into one verdict: it is six independently computed facets, split
+into what the verifier proved, what the signer merely declared, and what nobody checked.
 
-Pin the exact tag while the protocol is pre-1.0.
+## What this is
 
-- **Every tag is an immutable alias.** It points at one commit and is never moved. A fix
-  arrives as a *new* tag you adopt by editing the pin, never as a silent change under the one
-  you already wrote. Both `v0.2.1` and `v0.2.2` exist for that reason rather than because
-  `v0.2` was re-pointed.
-- **The cost is that fixes do not reach you on their own** — including security fixes. Watch
-  the releases, or let Dependabot's `github-actions` ecosystem open the bump as a pull
-  request you can read before merging.
-- **A patch tag can change behaviour when the old behaviour was wrong.** `v0.2.2` refuses
-  contributions that `v0.2.1` accepted, because `v0.2.1` accepted some it should not have.
-  Read the [CHANGELOG](CHANGELOG.md) before moving a pin; "patch" here means the protocol
-  did not change, not that nothing did.
-- **`spec_version` is a separate number from the tag.** The protocol is `scpe/0.1` across
-  every `v0.2.x` release. See [CHANGELOG.md](CHANGELOG.md) for the three axes and why
-  reading one as the other is the easiest mistake to make here.
-- **The `v0.1.x` line is legacy, not merely old.** It verifies an envelope format that is not
-  in `spec/`, so upgrading from it is a behaviour change and not a patch —
-  [docs/MIGRATION.md](docs/MIGRATION.md) has the steps.
+SCPE is an [in-toto](https://github.com/in-toto/attestation) predicate type carried in a
+[DSSE](https://github.com/secure-systems-lab/dsse) envelope, stored as a detached
+`file.scpe.jsonl` sidecar, plus a single-file standard-library verifier.
 
-**Which tag to be on:** `v0.2.3`. `v0.2.1` and `v0.2` accept a valid envelope replayed from
-another repository; `v0.2.2` and earlier write an unregistered domain into your README if you
-run `scpe init`. Both are in [SECURITY.md](SECURITY.md). The second one does not touch the
-Action, so a workflow pinned at `v0.2.2` is not exposed to it — but if you ever ran `scpe init`,
-open your README and delete the badge block.
+It writes **no cryptography, no envelope, no canonicalization, no transparency log, no PKI,
+and no AI-origin vocabulary.** All of that already exists and is better maintained elsewhere.
+What SCPE adds is four things:
 
-The Action uses a fork-safe two-job split, and the two jobs live in **two files**: the untrusted
-job in `scpe.yml` (which runs contributor code) holds no secrets, and only the trusted follow-up
-job in `scpe-seal.yml` posts the comment. Two files is a GitHub constraint, not a preference — a
-workflow that names itself in its own `workflow_run` trigger fails to register at all. Neither
-level installs anything in the
-runner — both run stdlib-only Python straight out of the Action's own checkout, so the bytes that
-decide a merge are the bytes of the tag you pinned, not whatever a package index serves that day.
-Check out with `fetch-depth: 0`: level 2 recomputes the diff as `git diff <base>...<head>`, and the
-default shallow checkout has no base commit to compare against.
+1. **A generation predicate** — *which model, at which version, from which provider, produced
+   these bytes* — for the **in-toto/DSSE supply-chain stack**, which has no such predicate.
+   C2PA 2.4 does say this, in `c2pa.ai-disclosure`, and says it well; it says it inside JUMBF,
+   behind a certificate gate, in an ecosystem where 166 of 174 certified products are still on
+   spec 2.2 and exactly one declares ML formats.
+2. **Typed derivation edges** over arbitrary bytes, reusing C2PA's `parentOf` /
+   `componentOf` / `inputTo` rather than minting a fourth vocabulary.
+3. **Sidecar discovery** for a loose file — the convention in-toto never specified.
+4. **An assurance model** that reports what a signature established as separate, computed
+   facets — and never collapses them into a score, a grade, or a green tick.
 
-The seal it posts carries more than the verdict — a risk band, a file/line count, an optional test
-run. **Those are the Action's own reporting layer, not part of the protocol**: no status, no
-`verified`, and nothing in `spec/` depends on them. The verdict is the verifier's; the rest is a
-report.
+## What this is not
 
-## Verify anything yourself
+- **Not an AI detector.** SCPE records a signer's assertion. Its truth rests entirely on the
+  signer's honesty. Nothing here inspects bytes to guess whether a model wrote them.
+- **Not proof that an AI created something.** `attribution: self-asserted` — the only value
+  reachable for essentially every record today — means exactly one thing: *someone signed a
+  claim about themselves.*
+- **Not able to say a file is human-made.** SCPE inherits in-toto's monotonic-policy
+  principle: attestations only add. "This is not AI-generated" is structurally
+  inexpressible, permanently.
+- **Absence of a record proves nothing.** A file without one either never had one or had it
+  stripped. These are indistinguishable, and the verifier says so rather than implying
+  suspicion.
 
-The reference verifier is one stdlib-only file — read it top to bottom and you know exactly what
-a seal means:
+---
 
-```bash
-python reference/standalone/verify_envelope.py <envelope.zip> --keys <login.keys>
-# → [OK] verified (attestations: none) [keys: flag]
-#   (or a precise reject status: tampered, signature-invalid, …)
+## Why it exists
+
+The honest case is narrow, and it starts by conceding what it is not.
+
+Most of what a "provenance envelope for AI artifacts" would offer is **already shipped**.
+`c2pa-rs` 0.26.46 (8 April 2026) made sidecar signing format-agnostic — *"Allow any file type
+to be signed with a sidecar"* (PR #2014), confirmed in the SDK source; `c2patool` itself still
+gates unknown extensions on a hardcoded MIME table, which is the only reason that seam is not
+already closed at the CLI. in-toto has bound subjects purely by digest "regardless of content
+type" since v1. OpenSSF Model
+Signing v1.0 ships a detached, offline-verifiable sidecar for AI artifacts today.
+`gh attestation verify --bundle --custom-trusted-root` does air-gapped verification as a
+product feature. And "not an AI detector" is the incumbents' published position, stated
+better than this project would state it. Everything in this section is as of the primary-source survey of **31 August 2026**
+([docs/standards-landscape.md](docs/standards-landscape.md)); the in-toto registry had five
+unmerged AI-predicate proposals open at that date, so these claims are dated, not permanent.
+
+The survey found three surviving seams (plus a weaker fourth). Two of them are
+what this project acts on:
+
+**The supply-chain stack has no way to say "model M, version V, provider P produced these
+bytes."** C2PA can — `c2pa.ai-disclosure` carries a model PURL, a scientific domain and a
+human-oversight enum, and that clause of the thesis is genuinely occupied there. But nothing in
+in-toto, SLSA or Sigstore can, and that is where software artifacts actually live: OpenSSF
+Model Signing treats the model as the *subject* — a signed weights file — never as the *agent*
+of another artifact's creation. That inversion is the gap. in-toto issue
+[#244](https://github.com/in-toto/attestation/issues/244) asked this exact question in June
+2023 and has been untouched since July 2023, while five AI-predicate proposals were filed
+against that registry between May and August 2026 and none merged.
+
+**Nobody renders what a signature actually established.** `cosign` says PASS or FAIL against a
+policy you supplied. `gh attestation verify` says verified. C2PA comes closest — it reports a
+richer validation result than a boolean, with a detailed status-code taxonomy — and it is
+still one axis. Meanwhile the ordinary real case is
+*"identity X signed a statement saying model M made these bytes, and M signed nothing"* — a
+notarized claim about a third party — and no verifier in the field says that out loud.
+
+Neither is a cryptographic contribution. This is a vocabulary and a verification-honesty
+layer, and the project says so rather than dressing it up.
+
+---
+
+## Install and use
+
+Requires Python 3.11+ and `ssh-keygen`. Nothing else — the verifier is one standard-library
+file.
+
+```console
+# sign a file with a key you already have
+$ python reference/scpe_sign.py report.pdf --key ~/.ssh/id_ed25519 \
+      --provider anthropic --model claude-opus-4-5-20251101 \
+      --source-type trainedAlgorithmicData --oversight prompt_guided
+report.pdf.scpe.jsonl
+
+# verify against a trust policy you control
+$ python reference/scpe_verify.py report.pdf --policy ~/.ssh/allowed_signers
+$ python reference/scpe_verify.py report.pdf --policy ~/.ssh/allowed_signers --json
 ```
 
-`[keys: …]` names the anchor that answered — `flag` here, because `--keys` supplied the key set.
-Without that flag, a `keys` file sitting beside `manifest.json` in the input answers as
-`bundled`, and only if neither is present does the verifier fetch from the contributor's host as
-`forge`.
+The trust policy is OpenSSH's own `allowed_signers` format, used verbatim:
 
-The 18 normative [test vectors](spec/test-vectors) are the conformance contract for **status**:
-an implementation that produces their expected statuses conforms to the spec's status behaviour.
-They don't pin every normative requirement — no vector carries an expected `key_source`, so
-passing all eighteen does not by itself show that the `key_source` MUST is honoured; that one is
-checked by inspection. Every vector ships its own `keys` file so the suite runs offline, and no
-vector reaches the `forge` anchor.
+```
+alice namespaces="scpe/1"     ssh-ed25519 AAAA…
+bob   namespaces="scpe-obs/1" ssh-ed25519 AAAA…
+```
 
-**Cost**
+That `namespaces=` restriction is enforced by OpenSSH itself at verification time, so a key
+bound to `scpe/1` **verifies** as a producer and will not verify as an observer. Role separation is expressible in a
+text file the operator owns, offline, with no infrastructure.
 
-| | Measured |
+### Recording what a file came from
+
+```console
+$ python reference/scpe_sign.py final.txt --key ~/.ssh/id_ed25519 \
+      --derived-from draft.txt:parentOf \
+      --derived-from quarterly.csv:inputTo
+```
+
+A `parentOf` edge is pinned to the parent's signed statement, not merely to the parent file —
+so someone who publishes their own record about the same input cannot silently become your
+ancestor. The tool refuses to declare a `parentOf` edge to a file that has no record, because
+that pin is not optional.
+
+### Committing to a prompt without storing it
+
+```console
+$ python reference/scpe_sign.py report.pdf --key ~/.ssh/id_ed25519 \
+      --commit-prompt ./prompt.txt
+```
+
+Prompts contain intellectual property, confidential material and personal data. **SCPE never
+requires storing one.** A commitment records a salted, structurally framed hash (SD-JWT
+disclosure form) — the prompt text never enters the record. The disclosure needed to open it
+later is written beside you, to `report.pdf.scpe.disclosures.jsonl`, and **is never
+published**: without it the commitment can never be opened, by anyone, including you.
+
+---
+
+## Exit codes
+
+| Code | Status | Meaning |
+|---|---|---|
+| 0 | `ok` | Everything checked, checked out. |
+| 10 | `ok-self-anchored` | Valid — but the trust anchor came from inside the input. |
+| 11 | `subject-unavailable` | Record is valid; the artifact bytes were never supplied. |
+| 20 | `signature-invalid` | A declared signature failed. |
+| 21 | `digest-mismatch` | The supplied bytes are not the signed ones. |
+| 22 | `assurance-overclaimed` | The producer asserted a facet the verifier recomputed differently. |
+| 30–35 | `unsupported-*`, `malformed-*` | Fail closed on anything unrecognised. |
+| 40 | `no-provenance-found` | No record located. |
+| 50 | `tooling-error` | A backend was unavailable. **No check ran.** |
+
+**Branch on `status`, never on an exit-code range.** 10 and 11 are passes in which the
+verifier established very little.
+
+---
+
+## Honest status
+
+**This project has no adopters, no users, and no external implementations.** It is a
+specification and a reference implementation by one person, published so the ideas can be
+checked and, if they hold up, filed upstream.
+
+- The predicate type is **not** registered with in-toto. Filing it is the next step, not a
+  completed one.
+- No AI provider emits SCPE records. None has been asked.
+- `attribution: provider-attested` and `tee-attested` are specified and **the reference
+  verifier reaches neither** — it implements no C2PA, Sigstore or TEE-receipt importer. The
+  design's one real path to `provider-attested` (reading an Anthropic-signed C2PA image as an
+  input edge, [SPEC §15.2](spec/SPECIFICATION.md)) is designed and not built. No provider
+  signs *text* output in a form a third party can verify offline.
+- Interoperability with C2PA, Sigstore and SLSA is **designed and not implemented** — see
+  [SPECIFICATION.md §15](spec/SPECIFICATION.md).
+- The reference verifier implements four of five `anchor` values (`policy`, `flag`,
+  `bundled`, `forge`). **`time: externally-anchored` is specified and emitted by no code
+  here** — no time anchor is validated, so that facet always reads `unanchored`.
+- There is **one** implementation. A second, written independently from the specification,
+  is what would turn self-consistency into conformance.
+- The `scpe` console script **published on PyPI today** is the retired `scpe/0.1` CLI and
+  does **not** verify this format. This repository no longer defines that entry point —
+  `scpe-verify` and `scpe-sign` replace it — but anyone who installed the old release still
+  has the old tool. The Go and Rust ports of the retired format were removed rather than
+  ported.
+
+The ADR carries a
+[pre-registered falsification test](docs/adr/0001-from-pull-requests-to-generation-events.md#pre-registered-falsification-test):
+five external events, three of which would retire this project outright. One — in-toto merging
+an AI-generation predicate first — is live.
+
+### What came before
+
+`scpe/0.1` was a signed envelope for **pull-request contributions**: it asked maintainers to
+gate merges on whether an AI-assisted change carried a signed disclosure. That version is
+retired, and the reason is worth keeping in view.
+
+The argument did not survive contact with the maintainers it was built for — and the reason
+is more interesting than "nobody cared."
+
+**OpenSSL already automates the part that matters.** Their CLA service reads every non-trivial
+commit for the `Assisted-by:` trailer, uses `Co-authored-by:` naming a known AI tool as a
+backstop, and holds an AI-assisted commit from a contributor still on CLA 1.0 until they
+re-sign. Asked whether the trailer's mere *presence* is checked for someone already on 1.1:
+*"Obviously not and we don't enforce it."* They built enforcement where disclosure carried a
+legal consequence and deliberately built none for transparency alone. That is not a project
+failing to enforce its policy; it is a project enforcing the branch that routes somewhere.
+
+**MicroPython checks by eye, and reports that it works.** *"I seldom find it is omitted"* —
+the real failure being people circumventing the template, which a checkbox lint would not
+catch — and *"Most authors quickly correct when reminded by a human, less so when CI is
+showing ❌"*.
+
+Both said no to **the mechanism this project was built on**: a CI gate on a disclosure
+trailer. Neither said provenance does not matter.
+
+The rewrite ([ADR 0001](docs/adr/0001-from-pull-requests-to-generation-events.md)) moves the
+subject from a pull request to a file, and the question from *"was this contribution
+disclosed?"* to *"what produced this file, and how much of that can anyone actually check?"*
+Whether **that** buyer exists is not established either, and the ADR says so.
+
+---
+
+## Documents
+
+| | |
 |---|---|
-| PR-body attestation (manifest + sig, base64) | 1.1–1.5 KB |
-| Standalone envelope (3-file / 27-line PR, zipped) | ~1.5 KB |
-| Verify wall-time | ~200 ms cold process · ~31 ms warm |
+| [spec/SPECIFICATION.md](spec/SPECIFICATION.md) | The protocol. Normative, RFC 2119 language. |
+| [spec/THREAT_MODEL.md](spec/THREAT_MODEL.md) | What is defended, and what is not. |
+| [docs/standards-landscape.md](docs/standards-landscape.md) | Primary-source survey: C2PA 2.4, in-toto, DSSE, SLSA, Sigstore, SCITT, OMS, the agent stack — including what this project believed and got wrong. |
+| [docs/adr/0001](docs/adr/0001-from-pull-requests-to-generation-events.md) | Why the pivot, what was deleted, and the objection this project raised against itself. |
+| [spec/test-vectors-v1/](spec/test-vectors-v1/) | The normative conformance corpus. |
 
-An `artifact` subject adds its payload size on top of ~800 B fixed overhead. Order-of-magnitude,
-single machine — not a formal benchmark suite. Re-run it yourself rather than taking the number:
-`python tests/bench_verify.py <envelope.zip> --keys <login.keys>` prints the median of 15 runs
-for both paths. The cold figure is a fresh interpreter per run; the warm one re-verifies
-in-process, which is what a batch consumer sees after import cost is paid once. Both use the
-`flag` anchor, so no network is in the measurement.
+## Security
 
-## Where it sits
+The verifier performs **zero network I/O**. There is no code path in it that opens a socket.
 
-- **Not code review.** Copilot / CodeRabbit judge whether the code is good. SCPE proves *who*
-  and *integrity*.
-- **Complements attribution, doesn't compete.** [Agent Trace](https://github.com/cursor/agent-trace)
-  and [git-ai](https://github.com/git-ai-project/git-ai) *record* who/what wrote which lines,
-  self-reported; SCPE carries that record inside the signed manifest, making it verifiable.
-- **A different layer from build provenance.** Sigstore / SLSA / in-toto attest *artifacts and
-  builds*; SCPE attests a *contribution*, at the pull-request boundary.
-- **Direct prior art:** `patatt` + `b4` ([kernel.org](https://github.com/mricon/patatt)) have run
-  this shape — the contributor self-signs a patch, the recipient verifies independently, no CA,
-  no server — on the Linux kernel's mailing list for years. They differ from SCPE in where the
-  key comes from: `patatt` keeps a keyring in the repository, so the project curates who may
-  sign; SCPE reads the keys the forge already publishes for the account, so there is nothing to
-  curate and nothing to depend on but the forge. Same shape, different trust root, applied to
-  the pull-request boundary instead of a mailing list.
+Report vulnerabilities per [SECURITY.md](SECURITY.md).
 
-## Status
+## Licence
 
-**v0.2.3 — early.** This is a specification plus a reference implementation (a single-file
-verifier, a producer, and a maintainer-side Action). The full test suite — including a 100-PR
-stress proof and a local end-to-end — runs on every push; the CI badge above is its live
-result. Two more independent verifiers, in Go and Rust, reach the same verdict as the Python
-reference on every one of the 18 normative vectors, and a differential test runs mutated
-manifests through all three and confirms they never disagree. That three-way agreement covers
-the path those vectors exercise — a directory input checked offline against a supplied keys
-file, the `flag` anchor; no vector exercises the network fetch. The Rust port goes no further: it has no network key fetch (`--keys` is required) and
-does not parse the zip-envelope or in-PR-body attestation input shapes that Python and Go both
-accept. There is **no external adoption yet**. It is not a hosted service and never will be.
-
-**`v0.1.x` is legacy: its signed-envelope path verifies a format that is not in this spec.** The
-Action at those tags checked a second envelope format that shipped inside the package and was
-deleted in `0.2.0`. A workflow still pinned there does not fail — it keeps posting seals for a
-format nothing here produces — and now that `0.2.x` is on PyPI it breaks outright instead, because that
-Action resolved its verifier from the package index at run time rather than from its own
-checkout. [CHANGELOG.md](CHANGELOG.md) has what moved; [docs/MIGRATION.md](docs/MIGRATION.md)
-has what to do about it.
-
-## Docs
-
-- [spec/SPEC.md](spec/SPEC.md) — the protocol (`scpe/0.1`)
-- [spec/THREAT_MODEL.md](spec/THREAT_MODEL.md) — what it does and does not defend against
-- [spec/FAQ.md](spec/FAQ.md) — why SSH, why the PR body, relation to Agent Trace / Sigstore / patatt
-- [docs/LEVELS.md](docs/LEVELS.md) — the L1 / L2 / L3 assurance ladder
-- [CHANGELOG.md](CHANGELOG.md) — what changed per release, and which version axis it moved
-- [docs/MIGRATION.md](docs/MIGRATION.md) — upgrading a `v0.1.x` pin, and why it doesn't warn you
-
-## License
-
-Code is [Apache-2.0](LICENSE); the specification (everything under `spec/`) is
-[CC-BY-4.0](LICENSE-SPEC). © 2026 Augusto Bastos.
+Specification: CC BY 4.0. Code: see [LICENSE](LICENSE).

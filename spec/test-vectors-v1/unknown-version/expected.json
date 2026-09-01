@@ -1,0 +1,5 @@
+{
+  "status": "unsupported-version",
+  "exit": 31,
+  "note": "Correctly signed, unknown version. Fail closed, never a partial read."
+}

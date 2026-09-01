@@ -1,0 +1,13 @@
+{
+  "status": "ok",
+  "exit": 0,
+  "facets": {
+    "binding": "bound",
+    "signature": "valid",
+    "anchor": "policy",
+    "attribution": "self-asserted",
+    "time": "unanchored",
+    "lineage": "none"
+  },
+  "note": "A well-formed generation record. Note that the strongest available attribution is still self-asserted."
+}

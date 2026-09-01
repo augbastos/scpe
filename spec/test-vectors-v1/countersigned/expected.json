@@ -1,0 +1,13 @@
+{
+  "status": "ok",
+  "exit": 0,
+  "facets": {
+    "binding": "bound",
+    "signature": "valid",
+    "anchor": "policy",
+    "attribution": "countersigned",
+    "time": "unanchored",
+    "lineage": "none"
+  },
+  "note": "A second key, under a different principal and namespace, signs a narrow statement about these bytes. It does NOT establish a second party - see SPEC 10.5 for why no offline verifier can."
+}

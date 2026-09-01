@@ -1,0 +1,5 @@
+{
+  "status": "malformed-input",
+  "exit": 34,
+  "note": "A VALID signature over a payload containing a duplicate key whose two values are both legal - one saying a human captured this, one saying a model generated it. Measured: Go encoding/json, Rust serde_json, JavaScript and Python's default loader all accept this with last-wins. A verifier that does so reports an origin the signer can choose per-reader. Refusing is the only reading that makes identical bytes yield identical verdicts everywhere."
+}

@@ -1,9 +1,0 @@
-{
-  "status": "verified",
-  "attestations": [
-    {
-      "type": "agent-trace",
-      "status": "present-generic/1"
-    }
-  ]
-}

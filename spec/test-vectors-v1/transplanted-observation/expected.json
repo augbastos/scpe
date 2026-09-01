@@ -1,0 +1,13 @@
+{
+  "status": "ok",
+  "exit": 0,
+  "facets": {
+    "binding": "bound",
+    "signature": "valid",
+    "anchor": "policy",
+    "attribution": "self-asserted",
+    "time": "unanchored",
+    "lineage": "none"
+  },
+  "note": "A genuine observation about a DIFFERENT statement, pasted into this bundle. The record stays valid and attribution stays self-asserted: an unrelated signature must never raise a facet."
+}

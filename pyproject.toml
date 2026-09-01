@@ -7,8 +7,8 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "scpe-protocol"
-version = "0.2.3"
-description = "SCPE: an open protocol for verifiable provenance of any digital artifact — who signed a contribution or file, what they declared about AI use, and that nothing was tampered with, verified offline with no server and no new accounts. Ships the single-file reference verifier, its producer, and a CLI (`scpe`) that seals a pull request from it."
+version = "1.0.0.dev0"
+description = "SCPE: a signed, checkable claim about what produced a file, and a verifier that reports exactly what it checked and what it did not. An in-toto predicate type in a DSSE envelope, stored as a detached sidecar, verified offline with no server, no CA and no account."
 readme = "README.md"
 requires-python = ">=3.11"
 # A bare SPDX expression (PEP 639), not `{ text = ... }` and not a `License ::` classifier:
@@ -16,41 +16,38 @@ requires-python = ">=3.11"
 # is a build whose real warnings stop being read.
 license = "Apache-2.0"
 authors = [{ name = "Augusto Bastos" }]
-keywords = ["github", "contributions", "open-source", "supply-chain", "provenance", "attestation", "code-signing", "ssh", "sshsig", "verification", "ci"]
+keywords = ["provenance", "attestation", "in-toto", "dsse", "supply-chain", "ai", "content-credentials", "sshsig", "verification", "offline"]
 classifiers = [
     "Development Status :: 3 - Alpha",
     "Intended Audience :: Developers",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
-    "Topic :: Software Development :: Version Control :: Git",
     "Topic :: Software Development :: Quality Assurance",
     "Topic :: Security",
     "Topic :: Security :: Cryptography",
     "Environment :: Console",
 ]
-# Deliberately empty, and enforced by a test. Stdlib only is not minimalism for its own
-# sake: it is what lets a CI job run this package straight from a pinned checkout
-# (`PYTHONPATH=<action_path> python3 -m scpe.cli seal ...`) with no install step, so the
-# bytes that verify a pull request are the bytes of the tag the caller pinned rather than
-# whatever a package index happens to serve at that moment. Signatures are checked by
-# `ssh-keygen -Y verify` (OpenSSH >= 8.2), not by a Python crypto library.
+# Deliberately empty. Stdlib only is not minimalism for its own sake: it is what lets the
+# verifier be one auditable file that runs straight from a checkout with no install step, so
+# the bytes producing a verdict are the bytes the caller pinned rather than whatever a package
+# index happens to serve. Signatures are checked by `ssh-keygen -Y verify` (OpenSSH >= 8.2),
+# never by a Python crypto library.
 dependencies = []
 
 [project.urls]
 Homepage = "https://github.com/augbastos/scpe"
 Repository = "https://github.com/augbastos/scpe"
-Documentation = "https://github.com/augbastos/scpe/blob/main/spec/SPEC.md"
+Documentation = "https://github.com/augbastos/scpe/blob/main/spec/SPECIFICATION.md"
 
 [project.optional-dependencies]
 dev = ["pytest>=8", "pyyaml>=6"]
 
+# The `scpe` console script belonged to the retired scpe/0.1 pull-request CLI and is gone
+# with it. Naming the same entry point for a different protocol would hand anyone who runs
+# `pip install scpe-protocol && scpe verify` a tool that silently verifies the wrong format.
 [project.scripts]
-scpe = "scpe.cli:main"
-scpe-envelope = "reference.producer:main"
+scpe-verify = "reference.scpe_verify:main"
+scpe-sign = "reference.scpe_sign:main"
 
-# `reference*` is packaged alongside `scpe*` on purpose: reference/standalone/verify_envelope.py
-# is where every verdict is produced, and scpe/verify.py imports it rather than carrying a
-# second copy. Shipping one and not the other would fork the conformance surface that the
-# eighteen normative test vectors and the Go and Rust ports are measured against.
 [tool.setuptools.packages.find]
-include = ["scpe*", "reference*"]
+include = ["reference*"]

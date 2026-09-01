@@ -1,0 +1,5 @@
+{
+  "status": "assurance-overclaimed",
+  "exit": 22,
+  "note": "A VALID signature over a false assurance claim. The verifier recomputes the facet and refuses. Signature validity is not the question; who computed the claim is."
+}
