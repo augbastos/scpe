@@ -10,6 +10,25 @@
 **A signed, checkable claim about what produced a file — and a verifier that tells you
 exactly what it checked and what it did not.**
 
+## Why it exists
+
+Most of what a "provenance envelope for AI artifacts" would add is already shipped.
+`c2pa-rs` 0.26.46 (8 April 2026) made sidecar signing format-agnostic — *"Allow any file
+type to be signed with a sidecar"* (PR #2014) — in-toto has bound subjects purely by
+digest since v1, OpenSSF Model Signing v1.0 ships a detached, offline-verifiable sidecar
+for AI artifacts today, and `gh attestation verify --bundle --custom-trusted-root` does
+air-gapped verification as a shipped feature. Two seams survive that survey. The
+in-toto/SLSA/Sigstore supply-chain stack has no predicate for *"model M, version V,
+provider P produced these bytes"* — C2PA has one, `c2pa.ai-disclosure`, but it sits
+behind a certificate gate, and as of the survey date 166 of 174 certified products were
+still on spec 2.2, with exactly one declaring ML formats. And no verifier in the field
+renders what a signature actually established as separate, named facets — the ordinary
+case, *"identity X signed a claim that model M made these bytes, and M signed
+nothing,"* goes unstated everywhere else. SCPE is a vocabulary for the first gap and a
+verification-honesty layer for the second — not a cryptographic contribution.
+Primary-source survey, dated 31 August 2026:
+[docs/standards-landscape.md](docs/standards-landscape.md).
+
 ```console
 $ python reference/scpe_verify.py report.pdf --policy ~/.ssh/allowed_signers
 [OK] ok
@@ -68,11 +87,11 @@ flowchart LR
 The signature is what binds the predicate to a signer (**B → C**). The human gate is the
 **operator's own trust policy** — the `allowed_signers` file (format shown under
 [Install and use](#install-and-use)), held offline, with no infrastructure: nothing
-verifies for a key that isn't listed in it (**P → D**). There is no
-GitHub identity binding and no repo-owner merge gate in this flow — that was `scpe/0.1`'s
-pull-request model, retired; see [What came before](#what-came-before). What comes out
-(**E**) is never collapsed into one verdict: it is six independently computed facets, split
-into what the verifier proved, what the signer merely declared, and what nobody checked.
+verifies for a key that isn't listed in it (**P → D**). There is no GitHub identity
+binding and no repo-owner merge gate in this flow — that was `scpe/0.1`'s pull-request
+model, retired; see [docs/README-scpe-0.1-archived.md](docs/README-scpe-0.1-archived.md).
+What comes out (**E**) is never collapsed into one verdict — see
+[Six facets, not one verdict](#six-facets-not-one-verdict) below.
 
 ## What this is
 
@@ -95,61 +114,26 @@ What SCPE adds is four things:
 4. **An assurance model** that reports what a signature established as separate, computed
    facets — and never collapses them into a score, a grade, or a green tick.
 
-## What this is not
+SCPE is not an AI detector: every record is the signer's own assertion, and its truth
+rests on the signer's honesty, not on anything SCPE inspects in the bytes. And because
+in-toto attestations are monotonic — they only add — SCPE cannot express "this file is
+not AI-generated"; that claim is structurally out of reach, not merely unimplemented.
 
-- **Not an AI detector.** SCPE records a signer's assertion. Its truth rests entirely on the
-  signer's honesty. Nothing here inspects bytes to guess whether a model wrote them.
-- **Not proof that an AI created something.** `attribution: self-asserted` — the only value
-  reachable for essentially every record today — means exactly one thing: *someone signed a
-  claim about themselves.*
-- **Not able to say a file is human-made.** SCPE inherits in-toto's monotonic-policy
-  principle: attestations only add. "This is not AI-generated" is structurally
-  inexpressible, permanently.
-- **Absence of a record proves nothing.** A file without one either never had one or had it
-  stripped. These are indistinguishable, and the verifier says so rather than implying
-  suspicion.
+## Six facets, not one verdict
 
----
+A result is never collapsed into a single verdict. It is six independently computed
+facets — `binding`, `signature`, `anchor`, `attribution`, `time`, `lineage` — and each
+one is reported as:
 
-## Why it exists
+- **Proved** — a check the verifier itself performed and can point to.
+- **Declared** — the signer's own claim about itself, carried but not independently
+  checked.
+- **Not checked** — named as a gap in the result, never silently skipped.
 
-The honest case is narrow, and it starts by conceding what it is not.
-
-Most of what a "provenance envelope for AI artifacts" would offer is **already shipped**.
-`c2pa-rs` 0.26.46 (8 April 2026) made sidecar signing format-agnostic — *"Allow any file type
-to be signed with a sidecar"* (PR #2014), confirmed in the SDK source; `c2patool` itself still
-gates unknown extensions on a hardcoded MIME table, which is the only reason that seam is not
-already closed at the CLI. in-toto has bound subjects purely by digest "regardless of content
-type" since v1. OpenSSF Model
-Signing v1.0 ships a detached, offline-verifiable sidecar for AI artifacts today.
-`gh attestation verify --bundle --custom-trusted-root` does air-gapped verification as a
-product feature. And "not an AI detector" is the incumbents' published position, stated
-better than this project would state it. Everything in this section is as of the primary-source survey of **31 August 2026**
-([docs/standards-landscape.md](docs/standards-landscape.md)); the in-toto registry had five
-unmerged AI-predicate proposals open at that date, so these claims are dated, not permanent.
-
-The survey found three surviving seams (plus a weaker fourth). Two of them are
-what this project acts on:
-
-**The supply-chain stack has no way to say "model M, version V, provider P produced these
-bytes."** C2PA can — `c2pa.ai-disclosure` carries a model PURL, a scientific domain and a
-human-oversight enum, and that clause of the thesis is genuinely occupied there. But nothing in
-in-toto, SLSA or Sigstore can, and that is where software artifacts actually live: OpenSSF
-Model Signing treats the model as the *subject* — a signed weights file — never as the *agent*
-of another artifact's creation. That inversion is the gap. in-toto issue
-[#244](https://github.com/in-toto/attestation/issues/244) asked this exact question in June
-2023 and has been untouched since July 2023, while five AI-predicate proposals were filed
-against that registry between May and August 2026 and none merged.
-
-**Nobody renders what a signature actually established.** `cosign` says PASS or FAIL against a
-policy you supplied. `gh attestation verify` says verified. C2PA comes closest — it reports a
-richer validation result than a boolean, with a detailed status-code taxonomy — and it is
-still one axis. Meanwhile the ordinary real case is
-*"identity X signed a statement saying model M made these bytes, and M signed nothing"* — a
-notarized claim about a third party — and no verifier in the field says that out loud.
-
-Neither is a cryptographic contribution. This is a vocabulary and a verification-honesty
-layer, and the project says so rather than dressing it up.
+That is what the example above is showing: a signature can be `proved` valid while the
+claim it carries — which model, which provider — stays `declared`, because nothing here
+independently corroborates *that*. Splitting the two, instead of blending them into one
+green tick, is the verifier's whole product.
 
 ---
 
@@ -228,69 +212,22 @@ verifier established very little.
 
 ---
 
-## Honest status
+## Two profiles, so a small verifier is a safe one
 
-**This project has no adopters, no users, and no external implementations.** It is a
-specification and a reference implementation by one person, published so the ideas can be
-checked and, if they hold up, filed upstream.
+**Core** is a complete verifier a competent engineer reaches in a working day: exact-byte
+signing, duplicate-key refusal, digest binding, one signature suite, one trust anchor, and
+the three facets computed from direct observation. **Full** adds derivation chains, time
+anchors and countersignatures.
 
-- The predicate type is **not** registered with in-toto. Filing it is the next step, not a
-  completed one.
-- No AI provider emits SCPE records. None has been asked.
-- `attribution: provider-attested` and `tee-attested` are specified and **the reference
-  verifier reaches neither** — it implements no C2PA, Sigstore or TEE-receipt importer. The
-  design's one real path to `provider-attested` (reading an Anthropic-signed C2PA image as an
-  input edge, [SPEC §15.2](spec/SPECIFICATION.md)) is designed and not built. No provider
-  signs *text* output in a form a third party can verify offline.
-- Interoperability with C2PA, Sigstore and SLSA is **designed and not implemented** — see
-  [SPECIFICATION.md §15](spec/SPECIFICATION.md).
-- The reference verifier implements four of five `anchor` values (`policy`, `flag`,
-  `bundled`, `forge`). **`time: externally-anchored` is specified and emitted by no code
-  here** — no time anchor is validated, so that facet always reads `unanchored`.
-- There is **one** implementation. A second, written independently from the specification,
-  is what would turn self-consistency into conformance.
-- The `scpe` console script **published on PyPI today** is the retired `scpe/0.1` CLI and
-  does **not** verify this format. This repository no longer defines that entry point —
-  `scpe-verify` and `scpe-sign` replace it — but anyone who installed the old release still
-  has the old tool. The Go and Rust ports of the retired format were removed rather than
-  ported.
+What makes Core safe rather than merely smaller is one rule: **a Core verifier refuses what
+it does not implement, rather than ignoring it.** An unimplemented role is
+`unsupported-role`, not a skipped line; unresolved lineage reads `declared`, never
+`verified-depth-N`; and each ceiling is named in `not_checked[]`, so the limit shows in the
+result rather than on a badge.
 
-The ADR carries a
-[pre-registered falsification test](docs/adr/0001-from-pull-requests-to-generation-events.md#pre-registered-falsification-test):
-five external events, three of which would retire this project outright. One — in-toto merging
-an AI-generation predicate first — is live.
-
-### What came before
-
-`scpe/0.1` was a signed envelope for **pull-request contributions**: it asked maintainers to
-gate merges on whether an AI-assisted change carried a signed disclosure. That version is
-retired, and the reason is worth keeping in view.
-
-The argument did not survive contact with the maintainers it was built for — and the reason
-is more interesting than "nobody cared."
-
-**OpenSSL already automates the part that matters.** Their CLA service reads every non-trivial
-commit for the `Assisted-by:` trailer, uses `Co-authored-by:` naming a known AI tool as a
-backstop, and holds an AI-assisted commit from a contributor still on CLA 1.0 until they
-re-sign. Asked whether the trailer's mere *presence* is checked for someone already on 1.1:
-*"Obviously not and we don't enforce it."* They built enforcement where disclosure carried a
-legal consequence and deliberately built none for transparency alone. That is not a project
-failing to enforce its policy; it is a project enforcing the branch that routes somewhere.
-
-**MicroPython checks by eye, and reports that it works.** *"I seldom find it is omitted"* —
-the real failure being people circumventing the template, which a checkbox lint would not
-catch — and *"Most authors quickly correct when reminded by a human, less so when CI is
-showing ❌"*.
-
-Both said no to **the mechanism this project was built on**: a CI gate on a disclosure
-trailer. Neither said provenance does not matter.
-
-The rewrite ([ADR 0001](docs/adr/0001-from-pull-requests-to-generation-events.md)) moves the
-subject from a pull request to a file, and the question from *"was this contribution
-disclosed?"* to *"what produced this file, and how much of that can anyone actually check?"*
-Whether **that** buyer exists is not established either, and the ADR says so.
-
----
+Two implementations ship here, a Python reference at Full and a Go one at Core, and
+`--profile` prints which a build implements — so the corpus holds each to the vectors for
+the profile it declares.
 
 ## Documents
 
