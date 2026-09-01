@@ -299,7 +299,45 @@ def main() -> int:
                           "signer can choose per-reader. Refusing is the only reading that "
                           "makes identical bytes yield identical verdicts everywhere.")
 
-        # 15 — no record at all.
+        # 15 — a payload whose bytes and characters differ in count.
+        #
+        # PAE length-prefixes the payload, and LEN() counts BYTES. Every non-ASCII character
+        # below occupies more than one byte, so an implementation that measures the payload
+        # in characters or UTF-16 code units computes a different LEN(b), signs different
+        # bytes, and produces a signature no one else can verify. JavaScript's
+        # String.prototype.length does exactly that. Rust invites the neighbouring mistake:
+        # decoding the payload to a String via from_utf8_lossy before hashing it.
+        #
+        # Go and Python return byte counts for len() over []byte/bytes, so neither reference
+        # implementation would have caught this alone. That is the point of the vector.
+        # Serialized with ensure_ascii=False ON PURPOSE. The reference producer escapes
+        # non-ASCII to \uXXXX, so it can never emit this shape and would never exercise the
+        # rule; another producer emitting raw UTF-8 is equally conforming, because PAE signs
+        # whatever bytes it is given. A verifier has to handle both.
+        unicode_stmt = statement(artifact, alice, generation={
+            "provider": "anthropic",
+            "model": "modèle-génératif-日本語",
+        })
+        unicode_stmt["subject"][0]["name"] = "relatório-anual-café.pdf"
+        raw_body = json.dumps(unicode_stmt, separators=(",", ":"), sort_keys=True,
+                              ensure_ascii=False).encode("utf-8")
+        import base64 as _b
+        from scpe_sign import sshsig_sign as _s
+        from scpe_verify import PAYLOAD_TYPE as _p, pae as _pae
+        _sig = _s(_pae(_p, raw_body), alice, ROLE_NAMESPACES["producer"])
+        write_vector(args.out, "non-ascii-payload", artifact_bytes=content,
+                     record=json.dumps({"payload": _b.b64encode(raw_body).decode(),
+                                        "payloadType": _p,
+                                        "signatures": [{"sig": _b.b64encode(_sig).decode()}]},
+                                       separators=(",", ":")) + "\n",
+                     policy_lines=producer_policy,
+                     expected={"status": "ok", "exit": 0, "facets": facets},
+                     note="A well-formed record whose payload contains multi-byte UTF-8 in "
+                          "both a declared field and the subject name. Verifies only if PAE "
+                          "length-prefixes the payload in BYTES and the payload is never "
+                          "decoded to a text type before signing or verifying.")
+
+        # 16 — no record at all.
         d = args.out / "no-provenance"
         d.mkdir(parents=True, exist_ok=True)
         (d / "artifact.bin").write_bytes(content)

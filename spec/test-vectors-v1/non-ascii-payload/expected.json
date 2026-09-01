@@ -1,0 +1,13 @@
+{
+  "status": "ok",
+  "exit": 0,
+  "facets": {
+    "binding": "bound",
+    "signature": "valid",
+    "anchor": "policy",
+    "attribution": "self-asserted",
+    "time": "unanchored",
+    "lineage": "none"
+  },
+  "note": "A well-formed record whose payload contains multi-byte UTF-8 in both a declared field and the subject name. Verifies only if PAE length-prefixes the payload in BYTES and the payload is never decoded to a text type before signing or verifying."
+}

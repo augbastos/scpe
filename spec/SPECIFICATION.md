@@ -167,6 +167,23 @@ Signature = Sign(PAE(UTF8(payloadType), SERIALIZED_BODY))
 
 where `SP` is ASCII 0x20 and `LEN()` is ASCII decimal with no leading zeros.
 
+**`t` and `b` are byte sequences, and `LEN()` counts BYTES.** This is stated explicitly
+because it is the first thing an implementer gets wrong. `b` is `SERIALIZED_BODY` - the raw
+octets - and a verifier **MUST NOT** decode it to a text type, pass it through a lossy or
+validating UTF-8 conversion, or measure its length in anything but bytes.
+
+The failure is silent and language-shaped:
+
+- A Rust implementation that reaches for `String::from_utf8_lossy` substitutes replacement
+  characters for any non-UTF-8 octet, so the bytes it signs stop being the bytes that were
+  signed. *(Observed in an independent implementation written from this document, which is
+  why this paragraph exists.)*
+- A JavaScript implementation using `String.prototype.length` counts UTF-16 code units, not
+  bytes, so any payload containing a non-ASCII character yields a different `LEN(b)` and a
+  signature no other implementation can verify.
+- Go and Python happen to return byte counts for `len()` over `[]byte`/`bytes`, which is
+  precisely why neither reference implementation caught this on its own.
+
 **No canonicalization is performed at any layer.** The bytes that were signed are the bytes
 that are verified. A verifier **MUST NOT** normalize, re-serialize, reorder, or re-encode the
 payload before verifying, and **MUST NOT** re-parse the envelope after verification to obtain
