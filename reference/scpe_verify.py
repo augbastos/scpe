@@ -294,6 +294,37 @@ def _fingerprint(pubkey_line: str) -> str | None:
     return "SHA256:" + base64.b64encode(digest).decode("ascii").rstrip("=")
 
 
+#: Key types this verifier will look for while scanning a trusted policy file for one
+#: named fingerprint (SPEC §8.1). Kept in step with SUITE_ALLOWLIST.
+_POLICY_KEYTYPES = ("ssh-ed25519", "ecdsa-sha2-nistp256")
+
+
+def _find_key_line(policy_path: Path, fingerprint: str) -> str | None:
+    """Return the "<keytype> <base64>" entry in the TRUSTED policy file whose fingerprint
+    equals `fingerprint`, or None if no key the operator actually anchored trust in has it.
+
+    Reads the operator's own allowed_signers file, not attacker-controlled input, so a
+    line this parser cannot make sense of is simply skipped rather than raised (SPEC
+    §13.3 bounds govern the signed record, not the operator's local policy).
+    """
+    try:
+        text = policy_path.read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        return None
+    for raw_line in text.splitlines():
+        line = raw_line.strip()
+        if not line or line.startswith("#"):
+            continue
+        tokens = line.split()
+        for i, tok in enumerate(tokens):
+            if tok in _POLICY_KEYTYPES and i + 1 < len(tokens):
+                key_line = f"{tok} {tokens[i + 1]}"
+                if _fingerprint(key_line) == fingerprint:
+                    return key_line
+                break
+    return None
+
+
 def sshsig_verify(signed: bytes, signature: bytes, allowed_signers: Path,
                   namespace: str) -> tuple[bool, str | None, str | None]:
     """Verify one SSHSIG signature. Returns (verified, principal, error).
@@ -816,7 +847,7 @@ def verify(artifact: Path | None, sidecar: Path | None = None, policy: Path | No
 
                 statement = parse_statement(envelope.body)
                 signers = validate_predicate(statement.predicate)
-                _match_declared(line_checks, signers)
+                _match_declared(line_checks, signers, envelope, policy_path)
 
                 roles = {c.role for c in verified}
                 if roles == {"observer"}:
@@ -1022,25 +1053,51 @@ def _verify_blind(envelope: Envelope, policy_path: Path) -> list[SignatureCheck]
     return checks
 
 
-def _match_declared(checks: list[SignatureCheck], signers: list[dict]) -> None:
+def _match_declared(checks: list[SignatureCheck], signers: list[dict],
+                    envelope: Envelope, policy_path: Path) -> None:
     """Bind each verified signature to the `signer[]` entry that claims it (SPEC §8.2).
 
     Runs only on already-verified bytes. A signature counts as *declared* when the payload
-    names a signer whose role matches the namespace the signature actually verified under —
-    so a payload cannot claim credit for a signature made in a different capacity.
+    names a signer whose role matches the namespace the signature actually verified under
+    AND whose `keyFingerprint` names the key that actually produced it.
+
+    The second half is not optional (SPEC §8.2, MUST): matching on role alone lets a
+    payload declare any fingerprint it likes for a role some *other* trusted key signed
+    under, and `render()` would print that unverified fingerprint under "Proved". So the
+    fingerprint is never taken on the payload's word - the trusted policy is searched for
+    the single key that fingerprint actually names, and the signature is re-verified
+    against a policy narrowed to ONLY that key. A signature made by a different key than
+    the one it claims fails this re-check and stays undeclared: counted, never verified,
+    never contributing to a facet or the verdict (SPEC §8.4).
     """
     by_role: dict[str, list[dict]] = {}
     for entry in signers:
         by_role.setdefault(entry["role"], []).append(entry)
 
+    signed = pae(envelope.payload_type, envelope.body)
     for check in checks:
         if not check.verified or check.role is None:
             continue
         candidates = by_role.get(check.role, [])
         if not candidates:
             continue          # verified, but the payload claims no signer in that role
-        check.declared = True
-        check.fingerprint = candidates[0]["keyFingerprint"]
+        namespace = ROLE_NAMESPACES[check.role]
+        raw_sig = _b64(envelope.signatures[check.index]["sig"],
+                      f"signatures[{check.index}].sig")
+        for candidate in candidates:
+            fingerprint = candidate["keyFingerprint"]
+            key_line = _find_key_line(policy_path, fingerprint)
+            if key_line is None:
+                continue      # declared key is not one this anchor actually trusts
+            with tempfile.TemporaryDirectory(prefix="scpe-pin-") as tmp:
+                pinned = Path(tmp) / "allowed_signers"
+                pinned.write_text(f'pinned namespaces="{namespace}" {key_line}\n',
+                                  encoding="utf-8")
+                ok, _principal, _err = sshsig_verify(signed, raw_sig, pinned, namespace)
+            if ok:
+                check.declared = True
+                check.fingerprint = fingerprint
+                break         # bound to exactly one signer entry
 
 
 def _observation_from(statement: Statement, checks: list[SignatureCheck]) -> Observation:

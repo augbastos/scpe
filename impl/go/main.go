@@ -213,6 +213,51 @@ func b64(v any, what string) ([]byte, error) {
 	return nil, refuse("malformed-input", what+" is not valid base64")
 }
 
+// policyKeyTypes are the key types looked for while scanning a trusted policy file for
+// one named fingerprint (§8.1). Kept in step with suiteAllowlist.
+var policyKeyTypes = map[string]bool{"ssh-ed25519": true, "ecdsa-sha2-nistp256": true}
+
+// keyFingerprint is the SHA256 fingerprint of a "keytype base64key" pair, computed the
+// same way `ssh-keygen -l` does.
+func keyFingerprint(keyLine string) (string, bool) {
+	parts := strings.Fields(keyLine)
+	if len(parts) < 2 {
+		return "", false
+	}
+	blob, err := base64.StdEncoding.DecodeString(parts[1])
+	if err != nil {
+		return "", false
+	}
+	sum := sha256.Sum256(blob)
+	return "SHA256:" + strings.TrimRight(base64.StdEncoding.EncodeToString(sum[:]), "="), true
+}
+
+// findKeyLine returns the "<keytype> <base64>" entry in the TRUSTED policy file whose
+// fingerprint equals fingerprint, or "" if no key this anchor actually trusts has it.
+func findKeyLine(policyPath, fingerprint string) string {
+	data, err := os.ReadFile(policyPath)
+	if err != nil {
+		return ""
+	}
+	for _, raw := range strings.Split(string(data), "\n") {
+		line := strings.TrimSpace(raw)
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+		tokens := strings.Fields(line)
+		for i, tok := range tokens {
+			if policyKeyTypes[tok] && i+1 < len(tokens) {
+				keyLine := tok + " " + tokens[i+1]
+				if fp, ok := keyFingerprint(keyLine); ok && fp == fingerprint {
+					return keyLine
+				}
+				break
+			}
+		}
+	}
+	return ""
+}
+
 // ---------------------------------------------------------------- DSSE (§4.1, §4.2)
 
 // pae is DSSE Pre-Authentication Encoding:
@@ -537,12 +582,21 @@ func validatePredicate(pred map[string]any) ([]map[string]any, error) {
 }
 
 // matchDeclared binds each verified signature to the signer[] entry that claims it (§8.2).
-func matchDeclared(checks []sigCheck, signers []map[string]any) {
+//
+// Matching on role alone is not enough (SPEC §8.2, MUST): a payload could declare any
+// fingerprint it likes for a role some OTHER trusted key signed under. So the
+// fingerprint is never taken on the payload's word - the trusted policy is searched for
+// the single key that fingerprint actually names, and the signature is re-verified
+// against a policy narrowed to ONLY that key. A signature made by a different key than
+// the one it claims fails this re-check and stays undeclared: counted, never verified,
+// never contributing to a facet or the verdict (§8.4).
+func matchDeclared(checks []sigCheck, signers []map[string]any, env *envelope, policy string) {
 	byRole := map[string][]map[string]any{}
 	for _, s := range signers {
 		r := s["role"].(string)
 		byRole[r] = append(byRole[r], s)
 	}
+	signed := pae(env.payloadType, env.body)
 	for i := range checks {
 		if !checks[i].verified || checks[i].role == "" {
 			continue
@@ -551,8 +605,38 @@ func matchDeclared(checks []sigCheck, signers []map[string]any) {
 		if len(cands) == 0 {
 			continue // verified, but the payload claims no signer in that role
 		}
-		checks[i].declared = true
-		checks[i].fingerprint = cands[0]["keyFingerprint"].(string)
+		namespace := roleNamespaces[checks[i].role]
+		sigEntry, ok := env.signatures[checks[i].index].(map[string]any)
+		if !ok {
+			continue
+		}
+		rawSig, err := b64(sigEntry["sig"], fmt.Sprintf("signatures[%d].sig", checks[i].index))
+		if err != nil {
+			continue
+		}
+		for _, cand := range cands {
+			fp := cand["keyFingerprint"].(string)
+			keyLine := findKeyLine(policy, fp)
+			if keyLine == "" {
+				continue // declared key is not one this anchor actually trusts
+			}
+			tmp, err := os.MkdirTemp("", "scpe-go-pin-")
+			if err != nil {
+				continue
+			}
+			pinned := filepath.Join(tmp, "allowed_signers")
+			content := fmt.Sprintf("pinned namespaces=%q %s\n", namespace, keyLine)
+			verified := false
+			if os.WriteFile(pinned, []byte(content), 0o600) == nil {
+				verified, _, _ = sshsigVerify(signed, rawSig, pinned, namespace)
+			}
+			os.RemoveAll(tmp)
+			if verified {
+				checks[i].declared = true
+				checks[i].fingerprint = fp
+				break
+			}
+		}
 	}
 }
 
@@ -931,7 +1015,7 @@ func run(artifact, sidecarPath, policy string) (*result, error) {
 		if err != nil {
 			return nil, err
 		}
-		matchDeclared(checks, signers)
+		matchDeclared(checks, signers, env, policy)
 
 		onlyObserver := true
 		for _, c := range checks {

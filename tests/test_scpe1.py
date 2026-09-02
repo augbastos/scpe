@@ -182,6 +182,26 @@ def test_untrusted_signer_is_rejected(world, tmp_path):
     assert run(world["artifact"], pol)["status"] == "signature-invalid"
 
 
+def test_declared_fingerprint_must_be_the_key_that_actually_signed(world, tmp_path):
+    """SPEC §8.2 (MUST): a verifier must confirm the fingerprint of the key it used
+    matches a `signer[].keyFingerprint` inside the signed payload, not just that SOME
+    trusted key in that role verified. A payload naming alice's (real, trusted) fingerprint
+    while actually signed by bob (also real, also trusted) must never verify - this is the
+    forged-fingerprint class the project already fixed once for scpe/0.1
+    (`contributor.key_fingerprint`, CHANGELOG.md) and is fixed here for scpe/1.
+    """
+    stmt = statement(world["artifact"], world["alice"])   # declares ALICE's fingerprint
+    art = tmp_path / "report.txt"
+    art.write_bytes(world["artifact"].read_bytes())
+    (tmp_path / "report.txt.scpe.jsonl").write_text(line(stmt, world["bob"]))  # signed by BOB
+
+    pol = policy(tmp_path / "p", ("alice", "scpe/1", world["alice"]),
+                ("bob", "scpe/1", world["bob"]))
+    r = run(art, pol)
+    assert r["status"] == "signature-invalid"
+    assert not r["proved"], "a forged fingerprint must never be printed as proved"
+
+
 # --------------------------------------------------------------- fail-closed
 
 
