@@ -70,4 +70,6 @@ jobs:
           # in this YAML. The trusted job stays free of checkouts, installs and
           # contributor code.
           msg="$(python3 -c "import json; print(json.load(open('results.json')).get('comment') or '')")"
-          [ -n "$msg" ] && gh pr comment "$pr" --repo "${{ github.repository }}" --body "$msg"
+          if [ -n "$msg" ]; then
+            gh pr comment "$pr" --repo "${{ github.repository }}" --body "$msg"
+          fi
