@@ -559,3 +559,12 @@ def test_levels_doc_exists_and_covers_all_three_levels():
     # It must be honest about what level 2 does NOT prove about "who" — the same
     # scoping THREAT_MODEL.md already states, not a stronger claim.
     assert "not implemented" in levels_doc.lower()
+
+def test_seal_job_handles_empty_msg_safely_under_set_e():
+    """GitHub Actions runs shell steps with `set -e`. Using `[ -n "$msg" ] && gh pr comment...`
+    when `$msg` is empty causes `[` to exit 1, which fails the entire job. It must use an `if` block."""
+    trusted = _workflow_run_job()
+    assert "if [ -n \"$msg\" ]; then" in trusted['steps'][1]['run'], (
+        "The trusted job must use an `if` block instead of `&&` so an empty message "
+        "does not fail the job under `set -e`"
+    )
