@@ -103,6 +103,10 @@ presenting this as a solution looking for its first user. It is a finished, froz
 `v0.2.3` with a written spec, a threat model, three independent verifiers held to identical
 verdicts, and an honest record of being wrong in public.
 
+A note from October 2026: projects that ask for AI disclosure have mostly settled on a plain
+commit trailer (`Assisted-by:` or `Generated-by:`), read by people or a simple check, not signed.
+I have not seen one ask for a signed declaration.
+
 If you maintain something and you think the premise is wrong in the *other* direction — that
 you do have this problem — that is the one thing worth telling me.
 
