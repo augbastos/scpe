@@ -25,7 +25,8 @@ name: scpe
 # GATE MODE (policy, opt-in): set `require: "true"` on the `augbastos/scpe@v0.2.3` step
 # below to make this repository REQUIRE a signed scpe contribution. A PR with no
 # attestation, or any status other than "verified" (spec scpe/0.1 §8), then FAILS the
-# companion's "seal" job and posts "❌ Not verifiable" instead of the usual report.
+# "verify" job after uploading its result; the companion's "seal" job also fails
+# and posts "❌ Not verifiable" instead of the usual report.
 # Passing the §8 status is necessary and not sufficient: two further cases fail the gate
 # while the status is exactly "verified", each with its own message — a contribution
 # whose signed manifest declares no `ai_disclosure.mode` (level 2 implies level 1), and
@@ -92,3 +93,8 @@ jobs:
           path: |
             results.json
             pr-number.txt
+
+      # Upload first so the trusted companion can still post the failure reason.
+      - name: Enforce verification gate
+        run: >-
+          python3 -I -c 'import json, sys; result = json.load(open("results.json")); sys.exit(0 if result["gate_pass"] is True else 1)'

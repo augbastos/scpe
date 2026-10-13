@@ -67,3 +67,8 @@ jobs:
           path: |
             results.json
             pr-number.txt
+
+      # Upload first so the trusted companion can still post the failure reason.
+      - name: Enforce verification gate
+        run: >-
+          python3 -I -c 'import json, sys; result = json.load(open("results.json")); sys.exit(0 if result["gate_pass"] is True else 1)'
