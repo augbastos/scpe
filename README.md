@@ -247,7 +247,7 @@ Add a workflow that verifies every PR and posts a seal. Set `require` to gate me
 - uses: augbastos/scpe@v0.2.3
   with:
     level: "1"        # 1 = disclosure lint · 2 = signed envelope required
-    require: "true"   # fail the check on anything not verifiable
+    require: "true"   # gate_pass=false on anything not verifiable; the verify job enforces it
 ```
 
 ### Version policy
@@ -288,8 +288,10 @@ decide a merge are the bytes of the tag you pinned, not whatever a package index
 The composite Action emits the policy decision without failing on a negative verdict. Use both
 [workflow files](docs/workflows/scpe.yml): `verify` uploads `results.json`, then enforces its
 `gate_pass` decision with a nonzero exit on failure. The trusted companion also runs after a
-failed verification to post the reason. With `require: "false"`, negative verdicts remain
-informational and the gate passes.
+failed gate to post the reason. With `require: "false"`, negative verdicts remain
+informational and the gate passes. A `pull_request` run uses the workflow file from the PR
+itself, so if the gate must hold against a hostile author, protect `.github/workflows/` with
+CODEOWNERS or a ruleset.
 Check out with `fetch-depth: 0`: level 2 recomputes the diff as `git diff <base>...<head>`, and the
 default shallow checkout has no base commit to compare against.
 

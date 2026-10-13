@@ -62,7 +62,7 @@ explicitly, drop the line unless you really do commit an envelope file.
 - uses: augbastos/scpe@v0.2.3
   with:
     level: "1"        # 1 = disclosure lint · 2 = signed envelope required
-    require: "true"   # fail the check on anything not verifiable
+    require: "true"   # gate_pass=false on anything not verifiable; the verify job enforces it
 ```
 
 The full fork-safe workflow is **two files** — [workflows/scpe.yml](workflows/scpe.yml) (the
