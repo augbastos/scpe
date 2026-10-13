@@ -24,7 +24,8 @@ permissions:
 
 jobs:
   seal:                         # TRUSTED — write token; never runs untrusted code
-    if: ${{ github.event.workflow_run.conclusion == 'success' }}
+    # Verification policy failures also upload a result for the comment below.
+    if: ${{ github.event.workflow_run.conclusion == 'success' || github.event.workflow_run.conclusion == 'failure' }}
     runs-on: ubuntu-latest
     permissions:
       pull-requests: write

@@ -285,6 +285,11 @@ workflow that names itself in its own `workflow_run` trigger fails to register a
 level installs anything in the
 runner — both run stdlib-only Python straight out of the Action's own checkout, so the bytes that
 decide a merge are the bytes of the tag you pinned, not whatever a package index serves that day.
+The composite Action emits the policy decision without failing on a negative verdict. Use both
+[workflow files](docs/workflows/scpe.yml): `verify` uploads `results.json`, then enforces its
+`gate_pass` decision with a nonzero exit on failure. The trusted companion also runs after a
+failed verification to post the reason. With `require: "false"`, negative verdicts remain
+informational and the gate passes.
 Check out with `fetch-depth: 0`: level 2 recomputes the diff as `git diff <base>...<head>`, and the
 default shallow checkout has no base commit to compare against.
 
