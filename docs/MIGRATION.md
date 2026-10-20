@@ -4,12 +4,11 @@
 Marketplace Action had been verifying *that* format rather than the one in
 [SPEC.md](../spec/SPEC.md). See [CHANGELOG.md](../CHANGELOG.md) for the full list of changes.
 
-This document exists because the compatibility story runs backwards from the usual one. Nothing
-here breaks loudly. A workflow pinned at `v0.1.x` keeps running and keeps posting seals — for a
-format this repository no longer produces and no conforming verifier can read. It will pass an
-envelope built by the removed tooling and reject a conforming one, and at no point does it say
-so. **A wrong answer that looks right is worse than a failed step**, so the upgrade is worth
-doing even though nothing is demanding it.
+The impact depends on the level. L1 disclosure lint does not read envelopes and is
+unaffected by the format change. Before `0.2.0`, legacy L2 silently verified the
+removed format, accepting envelopes from the old tooling and rejecting conforming
+ones. When its unpinned runtime dependency resolves to `0.2.x`, the legacy command
+instead fails argument parsing. A pinned Action tag did not pin that dependency.
 
 ---
 
@@ -36,13 +35,13 @@ pipx run --spec scpe-protocol scpe seal "${{ inputs.envelope }}" --repo … --js
 ```
 
 That resolves `scpe-protocol` from PyPI **on every run, with no version constraint** — an
-unpinned dependency hiding behind a pinned tag. That pin has had two distinct failure modes,
-and it is now in the second one.
+unpinned dependency hiding behind a pinned tag. The resolved package version
+determines which of two failure modes applies.
 
-**Today.** PyPI serves `0.2.3`, so the unconstrained resolve picks up `0.2.x`, where
+**When resolution selects `0.2.x`:**
 `scpe seal` takes `--envelope` as a flag and accepts no positional argument. The `v0.1.x`
-invocation is rejected by the argument parser and the step exits non-zero. **A workflow nobody
-edited is already red.** That is the good failure: it is loud, and it points at the pin.
+invocation is rejected by the argument parser and the step exits non-zero. A workflow
+can therefore fail without anyone editing it; this failure is loud rather than silent.
 
 **Before `0.2.0` was published**, the same pin failed silently instead. PyPI served `0.1.2`, so
 the step verified the removed format — an `envelope.json` carrying `PROTOCOL_VERSION "1"`,

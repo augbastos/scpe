@@ -207,19 +207,27 @@ invisible implementation detail: carry the anchor out to the caller as `key_sour
 
 `ssh-keygen -Y verify` needs an "allowed signers" file: one line per candidate key,
 naming the principal that key is allowed to sign for. A `.keys` endpoint or a keys
-file can list multiple keys (a user can have several SSH keys); emit one line per
-key, all with the same principal:
+file can list multiple keys (a user can have several SSH keys). Before building
+the file, compute each non-blank key line's OpenSSH SHA-256 fingerprint
+(`ssh-keygen -lf <public-key-file>`) and retain only keys matching
+`contributor.key_fingerprint`. Emit one line per retained key, all with the same
+principal:
 
 ```
 <subject> namespaces="scpe/0.1" <key-type> <base64-key>
 ```
 
 `<subject>` is the identity's username (from Step 3) — this is the **principal**,
-not a filename. `<key-type> <base64-key>` is copied verbatim from each non-blank
-line of the fetched/read keys body (a GitHub `.keys` response is already one
-`<type> <base64>` pair per line — split on newlines, strip blank lines, done). If
-the keys body has zero usable lines after that, treat it the same as an empty
-fetch: **`identity-unverifiable`**.
+not a filename. `<key-type> <base64-key>` is copied from a matching line of the
+fetched/read keys body. An empty keys body is **`identity-unverifiable`** at
+Step 4; a non-empty body with no key matching the declared fingerprint is
+**`signature-invalid`**. Do not authorize every published key: if the manifest
+names A but B signed it, the signature must fail even when both are published.
+
+The reference applies this filter when the declared fingerprint is a non-blank
+string. Although the field is required by the spec, an absent or unusable value
+currently leaves the candidate set unfiltered; the implementation does not
+independently reject that omission.
 
 Write this to a temp file. Clean it up when you're done — it contains no secrets
 (these are all *public* keys), but there's no reason to litter the filesystem.
@@ -283,11 +291,11 @@ branch:
    <base_sha>...<head>` recomputed from the pull request; a CLI flag for manual/
    test use). No diff available at all → **`tampered`** (there's nothing to check
    the anchor against, so it can never default to `verified`).
-2. Normalize it — **exactly** this transform, order matters:
-   - Decode as UTF-8.
-   - Replace every `\r\n` with `\n`, then every remaining `\r` with `\n`.
-   - Strip trailing newlines, then append exactly one `\n`.
-   - Re-encode to UTF-8 bytes.
+2. Normalize the raw **bytes** — exactly this transform, order matters:
+   - Replace every `b"\r\n"` with `b"\n"`, then every remaining `b"\r"` with `b"\n"`.
+   - Strip trailing `b"\n"` bytes, then append exactly one `b"\n"`.
+   - Do not decode or re-encode the diff; preserve all other bytes, including
+     invalid UTF-8.
 3. SHA-256 the normalized bytes, hex-encode. The reference verifier compares the
    resulting hex string to `subject.change.diff_sha256` with plain string equality
    — it does not lowercase either side first. Standard hex digest output is
@@ -451,6 +459,16 @@ never asserted on by the normative vectors; see
 [`../spec/test-vectors/README.md`](../spec/test-vectors/README.md) and the
 per-profile walkthrough in `examples/`). Match `status` — and `attestations` where
 given — exactly; everything else is yours to design.
+
+For regression coverage beyond the normative eighteen, also run the
+[adversarial vectors](../spec/test-vectors-adversarial/), including:
+
+- [`fingerprint-names-another-key`](../spec/test-vectors-adversarial/fingerprint-names-another-key/):
+  the manifest names A, B signs it, and both are published; expect
+  `signature-invalid`, testing Step 5's fingerprint filter.
+- [`invalid-utf8-diff`](../spec/test-vectors-adversarial/invalid-utf8-diff/):
+  the diff contains an invalid UTF-8 byte; expect `verified`, testing Step 7's
+  byte-level normalization.
 
 ## What you don't need to build
 

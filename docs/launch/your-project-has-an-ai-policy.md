@@ -1,7 +1,9 @@
 # Your project has an AI policy. Who enforces it?
 
-*Launch essay for SCPE. Status: spec `scpe/0.1`, tooling `v0.2.3`, **no external adoption**.
-Every claim here is meant to survive a stranger checking it.*
+*Historical launch essay for SCPE, spec `scpe/0.1`, tooling `v0.2.3`.
+The project is frozen with no external adoption. Its original adoption argument
+and recommendations below are historical; see the [retrospective](../retrospective.md)
+and [frozen roadmap](../ROADMAP.md). L3 is not implemented or planned.*
 
 ---
 
@@ -27,8 +29,10 @@ commit, looks for the `Assisted-by:` trailer — with `Co-authored-by:` naming a
 a backstop — and posts a `cla-check` commit status. What it enforces is the *consequence*: an
 AI-assisted commit from a signer still on CLA 1.0 fails and is held under a `hold: cla required`
 label until they re-sign 1.1. Signers already on 1.1 pass either way. So the trailer is
-load-bearing for the licensing decision rather than for presence, and whether presence itself is
-checked for 1.1 signers is a question I have open with them.
+load-bearing for the licensing decision rather than for presence. In the
+2026-07-28 exchange, the project member explicitly confirmed that they do not
+enforce trailer presence for signers already on 1.1; see the
+[retrospective](../retrospective.md).
 
 **MicroPython does it by eye, and says it works.** A collaborator there told me omission is rare,
 and that the few cases he can recall were contributors circumventing the template rather than
@@ -81,13 +85,14 @@ Enforcing *presence* is useful, but a disclosure is still just a claim. A contri
   named account. A `bundled` pass proves a signing act and nothing about who performed it — so
   the disclosure is non-repudiable at `forge` and `flag`, and merely signed at `bundled`. The
   Action fetches from the forge by default.
-- **Level 3 — Countersigned** *(roadmap, not implemented)*. A third party — a reviewer, or the
-  agent platform itself — co-signs. That's the strong claim, because a self-signature only
-  proves what the account already asserts.
+- **Level 3 — Countersigned** *(historical proposal; not implemented or planned)*.
+  The proposal called for a third party — a reviewer or the agent platform —
+  to co-sign, adding an independent identity claim to the self-signature.
 
-Adopt at the level that fits. Most projects need Level 1 today. The signature is the mechanism;
-the policy is the product — the same move SLSA made by selling *levels* instead of a metadata
-format.
+The original launch recommendation was to adopt at the level that fits and to
+start most projects at Level 1. The [retrospective](../retrospective.md) records
+why maintainer responses did not support that general recommendation. L1 and L2
+remain available configuration options, not evidence that projects need them.
 
 ## What a maintainer actually sees
 

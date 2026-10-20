@@ -78,7 +78,7 @@ already-published `.keys` endpoint — but only when it actually reaches that an
 owner-supplied or input-carried keys present, no network call happens at all, and the
 `local` provider never fetches (SPEC §8 step 4).
 ⁷ Via the `artifact` subject (SPEC §6.2), standalone-envelope-only today —
-artifact-verification-in-PR is a roadmap item.
+artifact-verification-in-PR remains a [historical proposal](ROADMAP.md), not a planned release.
 ⁸ Earned at `key_source == "forge"`, where the keys come from the account itself. A
 verifier can also resolve at `flag` (the owner's keys file) or `bundled` (a keys file
 carried inside the input) and return the same verdict word — at `bundled` the row's own
@@ -105,12 +105,12 @@ claimed** — never that the claim itself is true.
 | Protocol | What it is | The gap SCPE fills |
 |---|---|---|
 | **DSSE** | A signing-envelope *primitive* (`payload` / `payloadType` / `signatures` over a length-prefixed PAE) that deliberately leaves identity, key distribution, subject hashing, and policy "out of band." The signing substrate under in-toto and SLSA. | SCPE **is** that out-of-band layer, filled in for one concrete case: fixed identity resolution, per-type subject hashing, a PR-body transport, and a maintainer acceptance policy. Compatible, not rival — `attestations[]` is a typed slot a DSSE-wrapped statement could occupy under a future registered type, though nothing in `scpe/0.1` emits or verifies one. |
-| **Sigstore** | Keyless signing via an online CA (**Fulcio**, OIDC-bound short-lived certs) + a public transparency log (**Rekor**), driven by the **Cosign** client. Built for release-artifact provenance. | SCPE needs **no server, no CA, no transparency log** — it verifies against the SSH keys a forge already publishes (one HTTPS GET at verify time) or, fully offline, against a supplied keys file; it reports which anchor answered as `key_source`, since only the forge one carries the account claim (THREAT_MODEL §2.1). It signs a *contribution* at PR time, before any build. Sigstore as an opt-in signing method is on the `scpe/0.2` roadmap. |
+| **Sigstore** | Keyless signing via an online CA (**Fulcio**, OIDC-bound short-lived certs) + a public transparency log (**Rekor**), driven by the **Cosign** client. Built for release-artifact provenance. | SCPE needs **no server, no CA, no transparency log** — it verifies against the SSH keys a forge already publishes (one HTTPS GET at verify time) or, fully offline, against a supplied keys file; it reports which anchor answered as `key_source`, since only the forge one carries the account claim (THREAT_MODEL §2.1). It signs a *contribution* at PR time, before any build. Sigstore as an opt-in signing method is an unimplemented [historical proposal](ROADMAP.md), not a planned release. |
 | **patatt / b4** | End-to-end cryptographic attestation for **email patches** (kernel.org): a DKIM-style `X-Developer-Signature` header, ed25519/PGP/OpenSSH keys, an in-repo keyring, verified independently with no CA. b4 is the maintainer-side tool. | Direct prior art, not a new idea — SCPE brings the same trust shape to the **forge pull request** (where patatt explicitly does not reach) with a contribution-shaped, extensible payload (diff + AI disclosure + attribution) and an acceptance policy. |
 | **C2PA** | Content Credentials for **media assets** — provenance assertions + a signed claim (COSE/X.509, validated against a Trust List) **embedded inside** the file via byte-range/box hashing. | Media-authenticity standard; its unit is a finished asset with an embedded manifest and a PKI trust list. SCPE's unit is a stranger's **diff** in a PR body, verified before merge with no CA. SCPE names the media domains as future profiles rather than competing. |
 | **SLSA / in-toto** | Build- and supply-chain provenance: an in-toto **Statement** (`subject.digest` + `predicateType`) in a **DSSE** envelope, with SLSA's escalating build-provenance levels and the **build platform as the trusted party**. | SCPE attests a *contribution from a stranger before a build exists* — no builder to vouch for it, only the contributor's own published key. It is the layer *before* SLSA begins; SLSA's emerging Source Track is the space to watch for convergence. |
 | **Agent Trace** | Cursor's open, vendor-neutral RFC (v0.1.0) for recording per-line, per-conversation, per-model AI attribution. By its own admission: **no signatures, no identity, no verification** — purely self-reported metadata. | SCPE *carries* a full Agent Trace record verbatim as a signed attestation, bound to the exact diff and to a declared forge identity — turning anonymous self-report into signed, tamper-evident self-report, and into an *attributable* one when the verifier resolves keys at the `forge` anchor. Complementary by design. |
-| **DCO** | The Developer Certificate of Origin 1.1: a plain-text `Signed-off-by:` trailer certifying the **legal right to contribute**, enforced by a CI bot that checks the line is *present*. Not cryptographic, trivially forgeable. | SCPE proves *who* produced the change and that *nothing was tampered with*, and carries a signed AI disclosure — but makes **no legal/licensing claim at all**. Different questions; a PR can carry both a `Signed-off-by:` trailer and an SCPE seal. |
+| **DCO** | The Developer Certificate of Origin 1.1: a plain-text `Signed-off-by:` trailer certifying the **legal right to contribute**, enforced by a CI bot that checks the line is *present*. Not cryptographic, trivially forgeable. | SCPE verifies the signing key and content digest, and can carry a signed AI disclosure. Identity assurance depends on the key anchor; this does not prove who produced the change and makes **no legal/licensing claim at all**. Different questions; a PR can carry both a `Signed-off-by:` trailer and an SCPE seal. |
 
 ## DSSE
 
@@ -127,7 +127,8 @@ layer for the contribution case: identity as a `(provider, subject)` pair agains
 provider→host table (`github.com/<subject>.keys`, GitLab, Codeberg, or a `local` file),
 SSRF-safe because the manifest never carries a host; a typed `subject` union with a per-type
 integrity anchor (`diff_sha256` for `code-change`, `digest.sha256` for `artifact`); a concrete
-PR-body transport plus a standalone zip; and a tiered Levels 1/2/3 acceptance policy. SCPE
+PR-body transport plus a standalone zip; and implemented L1/L2 acceptance policies
+(L3 is an unimplemented historical proposal). SCPE
 signs the **exact bytes of `manifest.json` with SSHSIG** (`ssh-keygen -Y sign`, namespace
 `scpe/0.1`) rather than base64-wrapping under PAE — reusing keys a forge already publishes and
 keeping canonicalization out of a single stdlib-only verifier. This is a trade, not a claim of
@@ -155,11 +156,12 @@ existing `.keys` endpoint, or with the `local` provider no network at all. It si
 *already exists* at `github.com/<login>.keys`, with no OIDC round-trip. Honest scope: SCPE
 Level 2 self-signing proves integrity and non-repudiation of the disclosure, not "who" beyond
 what the forge account asserts; Sigstore's OIDC identity is a different and sometimes stronger
-claim, and SCPE's answer to a stronger "who" (Level 3 third-party countersignature) is roadmap,
-not shipped. Sigstore also does better on keyless UX at scale, transparency by default (Rekor
+claim. Level 3 third-party countersignature was SCPE's proposal for a stronger
+identity claim; it is not implemented or planned. Sigstore also does better on keyless UX at scale, transparency by default (Rekor
 gives proof-of-existence-at-time-T that SCPE's signed `created_at` does not — SCPE lists
 RFC 3161 / OpenTimestamps / Rekor timestamping as a *reserved* attestation type), org/workflow
-identity, and maturity. Sigstore as an alternative signing method is on the `scpe/0.2` roadmap.
+identity, and maturity. Sigstore as an alternative signing method remains an
+unimplemented proposal in the [frozen roadmap](ROADMAP.md).
 
 ## patatt / b4
 
@@ -240,7 +242,7 @@ needs no CI/builder trust root — just the contributor's SSH key and the forge'
 endpoint, verified offline — and ships a maintainer-facing acceptance gate for incoming PRs. In
 fairness, SLSA/in-toto are the standard for the build story, a mature CNCF-graduated ecosystem,
 and already have third-party attestation built in (in-toto's functionary/builder model is the
-"stronger who" SCPE only reaches at roadmap Level 3), with a broad adopted `predicateType`
+"stronger who" SCPE proposed in its unimplemented historical Level 3), with a broad adopted `predicateType`
 extension space. SLSA's emerging Source Track is the space to watch for convergence.
 
 ## Agent Trace
