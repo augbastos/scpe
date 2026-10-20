@@ -69,7 +69,12 @@ a quantum-hardened parameter) is a versioned change, covered in
 **Decision.** `manifest.sig` is an SSHSIG over the *exact bytes* of `manifest.json` as they sit
 in the envelope zip and travel in the PR. Producers MAY serialize however they like; verifiers
 MUST NOT re-serialize, canonicalize, or pretty-print the manifest before checking the signature
-(SPEC §4, §7). `json.loads` runs only *after* `ssh-keygen -Y verify` succeeds.
+(SPEC §4, §7). The verifier parses the manifest first, as untrusted JSON, to
+check its version and resolve the identity and candidate keys. Malformed JSON
+is rejected before signature verification. `ssh-keygen -Y verify` receives the
+original bytes, not a serialization of that parsed object. Only after the
+signature succeeds are the fields authenticated; subject-integrity checks then
+use those signed fields.
 
 **The alternative we rejected: canonical JSON.** The obvious other design is to canonicalize the
 JSON (e.g. [RFC 8785, JSON Canonicalization Scheme](https://www.rfc-editor.org/rfc/rfc8785)) so
@@ -194,12 +199,13 @@ nothing to run, so there is nothing to trust — and nothing to shut down" (FAQ)
 timestamp in `scpe/0.1`. Those properties are either delegated to whichever anchor answered —
 trust-on-first-use at the provider's key endpoint when the run reaches `forge`, and trust in a
 file the owner or the submitter supplied otherwise (THREAT_MODEL §2.1, §4) —
-or deferred to the roadmap: trusted timestamping (RFC 3161 / OpenTimestamps / a Rekor-style log)
+or left as historical proposals: trusted timestamping (RFC 3161 / OpenTimestamps / a Rekor-style log)
 is a *reserved* `timestamp` attestation type, surfaced as `present-unverified` until implemented
 (SPEC §5.1; ROADMAP §2). This is the same trade the FAQ makes against Sigstore's keyless flow:
 Sigstore is excellent but introduces an online CA and a transparency log — infrastructure
-`scpe/0.1` deliberately avoids, with Sigstore-as-an-alternative-signing-method left to the
-roadmap. SCPE makes the provider-trust delegation *explicit* rather than papering over it with a
+`scpe/0.1` deliberately avoids. Sigstore as an alternative signing method is also a
+historical proposal, not a planned release; see the [frozen roadmap](ROADMAP.md).
+SCPE makes the provider-trust delegation *explicit* rather than papering over it with a
 server that would still have to be trusted.
 
 ---
@@ -218,8 +224,9 @@ server that would still have to be trusted.
 
 ## Non-goals
 
-What SCPE deliberately does not try to do. Not "not yet" — see [ROADMAP.md](ROADMAP.md) for the
-deferred items that *are* on a path. This is the other list: things outside the protocol's job on
+What SCPE deliberately does not try to do. [ROADMAP.md](ROADMAP.md) preserves
+historical proposals; the project is frozen and those are not planned releases.
+This is the list of things outside the protocol's job on
 purpose, because trying to do them would either duplicate a tool that already exists, or turn a
 small, auditable, offline-verifiable format into something that isn't. Each item points back to
 where the spec, threat model, or FAQ already says so — this section collects the scattered "SCPE
@@ -228,7 +235,9 @@ does not..." statements in one place rather than asserting anything new.
 **1. Code review, quality, or safety.** SCPE is not a linter, a static analyzer, or a review tool.
 A `verified` result means the named key signed exactly this diff and this disclosure — it says
 nothing about whether the diff is good, correct, or safe code. **A verified envelope can carry
-verified malware, written by its real, verified author.** (SPEC §2, THREAT_MODEL §2: "Verified ≠
+malware signed by the verified key, whether or not its holder wrote it.** The
+signer's identity claim depends on the key anchor; authorship is not established.
+(SPEC §2, THREAT_MODEL §2: "Verified ≠
 safe. Review still exists for a reason.") Deterministic risk-banding or test runs some tooling
 layers on top of a seal are conveniences, not part of the protocol's guarantee.
 
@@ -267,7 +276,7 @@ a change — execution attestation, a TEE-backed or provider-signed model output
 **6. A trusted-timestamp / proof-of-existence service.** `created_at` in the manifest is a
 non-repudiable *claim* of time — the signer asserts it and can't later deny having claimed it — not
 a third-party-attested proof that the signature existed at that time. `timestamp` is a reserved,
-unimplemented attestation type for exactly this reason (SPEC §5.1, ROADMAP §2); until it lands, do
+unimplemented attestation type for exactly this reason (SPEC §5.1, ROADMAP §2); do
 not read `created_at` as forensic-grade.
 
 **7. A key-transparency or certificate-authority system.** When a run reaches the `forge` anchor,
@@ -304,17 +313,19 @@ background check, no "verified human," no reputation signal independent of the a
 ([LEVELS.md](LEVELS.md), THREAT_MODEL §4). That is the *ceiling*, reached only when the verifier
 resolved keys at the `forge` anchor; a `bundled` pass sits below it and asserts nothing about the
 published keys at all (THREAT_MODEL §2.1). A materially stronger identity claim requires a second,
-independent signer (Level 3 / countersignature), which is roadmap, not shipped.
+independent signer. Level 3 / countersignature was a historical proposal for that
+purpose; it is not implemented or planned in the [frozen project](ROADMAP.md).
 
 **12. Universal artifact verification through every transport.** The `artifact` subject type verifies
 a hash-addressed file, but only in a **standalone envelope** that actually carries the bytes
-(`artifact.bin`). PR transport carries a diff, not an arbitrary artifact payload, so artifact
-verification over a pull request is not implemented — a manifest that claims one there fails closed
-to `tampered`, never `verified` (SPEC §6.2, §9). SCPE offers no way to attest a non-code artifact
-*through* a GitHub PR the way it does for code.
+(`artifact.bin`, or an external file supplied with `--artifact`). PR-body transport
+carries no artifact payload, so an artifact manifest presented without those bytes
+returns `tampered` (SPEC §6.2, §9). The Action can verify an artifact through its
+explicit `envelope` input, but skips PR-context checks for it: a passing gate then
+checks the artifact's content, disclosure, and key anchor, not its relationship to the PR.
 
 **13. Multi-forge, first-class CI integration everywhere.** The polished transport — attestation in
 the PR body plus a maintained GitHub Action — is GitHub-specific today. The standalone envelope
 already verifies anywhere with a single-file verifier, but GitLab, Gitea/Forgejo, and email
-transports (in the `patatt`/`b4` style) are not built; they are [ROADMAP.md](ROADMAP.md) item 5,
-gated on real demand from a second forge, not a promise with a date.
+transports (in the `patatt`/`b4` style) are not built; [ROADMAP.md](ROADMAP.md) item 5
+preserves them as historical proposals, not planned releases.

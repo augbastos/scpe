@@ -1,4 +1,10 @@
-# SCPE Roadmap — designed, deliberately deferred
+# Historical extension proposals
+
+This document preserves ideas written before the project was frozen. It is not
+an active roadmap or a commitment to implement them. In particular, L3 is not
+implemented or planned. See the [current project state](../README.md) and
+[retrospective](retrospective.md). The future tense and demand hypotheses below
+record the original design rationale, not current plans or verified demand.
 
 `scpe/0.1` is intentionally small: a subject identified by a digest, verifiable evidence about
 it, and a signature — verified offline against a key set from one of three anchors, at best the
@@ -110,7 +116,8 @@ to emit a countersignature — neither of which is proven yet.
 
 ## 4. Non-code subjects
 
-**Today:** the spec and every example are about a software contribution (a diff).
+**Implemented:** both code-change and standalone artifact subjects are supported.
+The [artifact vector](../spec/test-vectors/valid-artifact/) exercises the latter.
 
 **Direction:** the core — "a subject identified by its cryptographic digest + verifiable
 evidence + a signature" — does not care whether the subject is a diff, an image, a PDF, an
