@@ -1,0 +1,70 @@
+name: safety
+
+# Required merge check (owner decision 2026-11-02). Blocks only on concrete facts:
+# a secret introduced by the PR's commits, or a changed path the base branch lists in
+# .github/safety-critical.txt as a real critical effect. It never runs the PR's code.
+# shortcut: runs on pull_request, so a PR that rewrites this file controls its own run;
+# acceptable while only trusted identities arm auto-merge, revisit before opening the repo
+# to outside contributors with auto-merge.
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+
+permissions:
+  contents: read
+  pull-requests: read
+
+concurrency:
+  group: safety-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  safety:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 1
+
+      - name: No secret introduced by this PR
+        env:
+          COMMITS: ${{ github.event.pull_request.commits }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          git fetch --quiet --deepen="$COMMITS" origin "$HEAD_SHA"
+          git config --unset-all http.https://github.com/.extraheader || true
+          curl -sSfL -o /tmp/gl.tgz https://github.com/gitleaks/gitleaks/releases/download/v8.21.2/gitleaks_8.21.2_linux_x64.tar.gz
+          echo "5bc41815076e6ed6ef8fbecc9d9b75bcae31f39029ceb55da08086315316e3ba  /tmp/gl.tgz" | sha256sum -c -
+          tar -xzf /tmp/gl.tgz -C /tmp gitleaks
+          /tmp/gitleaks git --no-banner --redact --log-opts="-n $COMMITS" .
+
+      - name: Critical effects wait for the owner
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          PR: ${{ github.event.pull_request.number }}
+          BASE: ${{ github.event.pull_request.base.sha }}
+        run: |
+          set -euo pipefail
+          files=$(gh api --paginate "repos/$REPO/pulls/$PR/files?per_page=100" --jq '.[].filename')
+          # The list is read from the base branch, so the PR cannot edit its own rules.
+          listed=$(gh api -H 'Accept: application/vnd.github.raw' "repos/$REPO/contents/.github/safety-critical.txt?ref=$BASE" 2>/dev/null || true)
+          rules=$listed
+          # Once the check exists on the base, changing it is itself a critical effect.
+          if gh api "repos/$REPO/contents/.github/workflows/safety.yml?ref=$BASE" --silent 2>/dev/null; then
+            rules=$(printf '%s\n%s\n' '^\.github/(workflows/safety\.yml|safety-critical\.txt)$ :: changes the merge safety check itself' "$listed")
+          fi
+          fail=0
+          while IFS= read -r line; do
+            case "$line" in ''|'#'*) continue ;; esac
+            re=${line%% :: *}; why=${line#* :: }
+            hit=$(printf '%s\n' "$files" | grep -E -m1 -- "$re" || true)
+            if [ -n "$hit" ]; then
+              echo "::error::needs owner: $hit ($why)"
+              fail=1
+            fi
+          done <<< "$rules"
+          [ "$fail" -eq 0 ] && echo "no critical effect listed for the changed files"
+          exit "$fail"
